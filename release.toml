@@ -1,0 +1,42 @@
+# Release configuration for multiomics-rs
+# Per-crate tag convention
+
+[[pre-release-replacements]]
+file = "CHANGELOG.md"
+search = "## \\[Unreleased\\]"
+replace = """## [{{version}}] - {{date}}"""
+
+[[pre-release-replacements]]
+file = "CHANGELOG.md"
+search = "ReleaseDate"
+replace = "{{date}}"
+
+[[pre-release-replacements]]
+file = "CHANGELOG.md"
+search = '<!-- next-header -->'
+replace = '<!-- next-header -->\n\n## [Unreleased]'
+
+[[pre-release-replacements]]
+file = "CHANGELOG.md"
+search = '<!-- next-url -->'
+replace = '<!-- next-url -->\n[{{version}}]: https://github.com/SHA888/multiomics-rs/compare/{{prev_version_name}}...{{version_name}}'
+
+[[pre-release-replacements]]
+file = "src/lib.rs"
+search = "docs.rs/{{crate_name}}"
+replace = "docs.rs/{{crate_name}}/{{version}}"
+
+[[pre-release-replacements]]
+file = "README.md"
+search = "docs.rs/{{crate_name}}"
+replace = "docs.rs/{{crate_name}}/{{version}}"
+
+[[pre-release-replacements]]
+file = "README.md"
+search = "crates.io/crates/{{crate_name}}"
+replace = "crates.io/crates/{{crate_name}}/{{version}}"
+
+# Tag format: <crate>-v<version>
+# Example: geo-soft-rs-v0.1.0
+tag-name = "{{crate_name}}-v{{version}}"
+tag-message = "Release {{crate_name}} {{version}}"

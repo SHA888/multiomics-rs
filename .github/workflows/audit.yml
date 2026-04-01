@@ -1,0 +1,26 @@
+name: Security Audit
+
+on:
+  schedule:
+    - cron: '0 0 * * 1'  # Weekly on Monday
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: true
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+      - name: Run security audit
+        run: cargo audit --workspace

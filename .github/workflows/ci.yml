@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: true
+      - name: Install rustfmt
+        run: rustup component add rustfmt
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: true
+      - name: Install clippy
+        run: rustup component add clippy
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    name: Test
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: true
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+      - name: Run tests
+        run: cargo nextest run --workspace --all-targets
+
+  doc:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: true
+      - name: Build documentation
+        run: cargo doc --no-deps --all-features --workspace
+      - name: Check documentation links
+        run: cargo doc --no-deps --all-features --workspace --document-private-items
+
+  deny:
+    name: Security & License Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: true
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@cargo-deny
+      - name: Run cargo-deny
+        run: cargo deny check
+
+  check:
+    name: Check
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: true
+      - name: Check workspace
+        run: cargo check --workspace --all-targets --all-features

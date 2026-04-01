@@ -1,0 +1,110 @@
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# IDE
+.vscode/
+.idea/
+.windsurf/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Data files (common in multi-omics work)
+*.soft
+*.soft.gz
+*.gct
+*.gct.gz
+*.tsv
+*.tsv.gz
+*.parquet
+*.csv
+*.csv.gz
+*.txt
+*.txt.gz
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Cache
+.cache/
+.cache-*/
+
+# Backup files
+*.bak
+*.backup
+
+# Python (if used for analysis)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+
+# Environment files
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Coverage reports
+coverage/
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Documentation build
+docs/_build/
+site/
+
+# Rust analyzer
+.rust-analyzer/
+target/
+
+# Debug builds
+target/debug/
+target/release/
+
+# Profiling
+*.profraw
+*.prof
+
+# Benchmark results
+bench_results/
+criterion/
+
+# Test artifacts
+tests/output/
+test_data/output/

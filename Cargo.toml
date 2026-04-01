@@ -1,0 +1,38 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.85.0"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/SHA888/multiomics-rs"
+authors = ["Kresna Sucandra"]
+categories = ["science", "parser-implementations"]
+keywords = ["genomics", "transcriptomics", "arrow", "bioinformatics", "omics"]
+
+[workspace.dependencies]
+# Arrow
+arrow  = "58"
+parquet = "58"
+
+# Parsing
+csv        = "1.4"
+flate2     = "1"       # gzip decompression for .soft.gz, .tsv.gz
+quick-xml  = "0.37"    # UniProt XML
+memmap2    = "0.9"
+
+# Time
+chrono     = "0.4"
+
+# Parallel
+rayon = "1.11"
+
+# Error handling
+thiserror = "2"
+anyhow    = "1"
+
+# Dev
+criterion = { version = "0.8", features = ["html_reports"] }
+tempfile  = "3"
+insta     = "1"

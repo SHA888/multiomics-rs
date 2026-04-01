@@ -1,0 +1,22 @@
+[package]
+name = "gtex-rs"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85.0"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/SHA888/multiomics-rs"
+authors = ["Kresna Sucandra"]
+categories = ["science", "parser-implementations"]
+keywords = ["genomics", "transcriptomics", "arrow", "bioinformatics", "omics", "gtex"]
+description = "GTEx GCT format reader → Arrow RecordBatches"
+
+[dependencies]
+arrow = { workspace = true }
+flate2 = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+tempfile = { workspace = true }
+insta = { workspace = true }

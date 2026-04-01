@@ -30,16 +30,16 @@ dgidb-rs            Sprint 6  (modality selector)
 ## SPRINT 0 — Workspace bootstrap
 > Same pattern as clinical-rs. Gate: CI green on empty workspace.
 
-### [ ] S0.1 Repository
+### [x] S0.1 Repository
 
-- [ ] S0.1.1 Create `github.com/SHA888/multiomics-rs` (public)
-- [ ] S0.1.2 Branch protection: `main` protected, require CI pass
-- [ ] S0.1.3 `LICENSE-MIT` + `LICENSE-APACHE`
-- [ ] S0.1.4 `CONTRIBUTING.md` — same conventions as clinical-rs
-- [ ] S0.1.5 `CODE_OF_CONDUCT.md` — Contributor Covenant v2.1
-- [ ] S0.1.6 `SECURITY.md` — data correctness bugs = security severity
+- [x] S0.1.1 Create `github.com/SHA888/multiomics-rs` (public)
+- [x] S0.1.2 Branch protection: `main` protected, require CI pass
+- [x] S0.1.3 `LICENSE-MIT` + `LICENSE-APACHE`
+- [x] S0.1.4 `CONTRIBUTING.md` — same conventions as clinical-rs
+- [x] S0.1.5 `CODE_OF_CONDUCT.md` — Contributor Covenant v2.1
+- [x] S0.1.6 `SECURITY.md` — data correctness bugs = security severity
 
-### [ ] S0.2 Workspace manifest (`Cargo.toml`)
+### [x] S0.2 Workspace manifest (`Cargo.toml`)
 
 ```toml
 [workspace]
@@ -79,44 +79,44 @@ tempfile  = "3"
 insta     = "1"
 ```
 
-- [ ] S0.2.1 Write workspace `Cargo.toml`
-- [ ] S0.2.2 `rust-toolchain.toml` pinning 1.84.0 stable
-- [ ] S0.2.3 `rustfmt.toml` — same config as clinical-rs
-- [ ] S0.2.4 Workspace clippy lints: forbid unsafe, pedantic warn
-- [ ] S0.2.5 `deny.toml` — same policy as clinical-rs
+- [x] S0.2.1 Write workspace `Cargo.toml`
+- [x] S0.2.2 `rust-toolchain.toml` pinning 1.84.0 stable
+- [x] S0.2.3 `rustfmt.toml` — same config as clinical-rs
+- [x] S0.2.4 Workspace clippy lints: forbid unsafe, pedantic warn
+- [x] S0.2.5 `deny.toml` — same policy as clinical-rs
 
-### [ ] S0.3 CI/CD
+### [x] S0.3 CI/CD
 
-- [ ] S0.3.1 `.github/workflows/ci.yml`
+- [x] S0.3.1 `.github/workflows/ci.yml`
   - trigger: push to `main`, PR to `main`
   - jobs: fmt + clippy + nextest + doc + deny
   - matrix: ubuntu-latest (primary), macos-latest
   - Rust cache via `Swatinem/rust-cache@v2`
-- [ ] S0.3.2 `.github/workflows/release.yml`
+- [x] S0.3.2 `.github/workflows/release.yml`
   - trigger: tag `<crate>-v*`
   - `cargo publish -p <crate>`
   - GitHub Release with changelog entry
-- [ ] S0.3.3 `.github/workflows/audit.yml` — nightly `cargo audit`
-- [ ] S0.3.4 `cliff.toml` — per-crate changelog
-- [ ] S0.3.5 `release.toml` — per-crate tag convention
+- [x] S0.3.3 `.github/workflows/audit.yml` — nightly `cargo audit`
+- [x] S0.3.4 `cliff.toml` — per-crate changelog
+- [x] S0.3.5 `release.toml` — per-crate tag convention
 
-### [ ] S0.4 Empty crate scaffolding
+### [x] S0.4 Empty crate scaffolding
 
 For each crate: `Cargo.toml` + `src/lib.rs` stub + `README.md` + `CHANGELOG.md`
 
-- [ ] geo-soft-rs scaffold
-- [ ] transcriptomic-rs scaffold
-- [ ] open-targets-rs scaffold
-- [ ] gtex-rs scaffold
-- [ ] string-rs scaffold
-- [ ] dgidb-rs scaffold
-- [ ] uniprot-rs scaffold
-- [ ] reactome-rs scaffold
+- [x] geo-soft-rs scaffold
+- [x] transcriptomic-rs scaffold
+- [x] open-targets-rs scaffold
+- [x] gtex-rs scaffold
+- [x] string-rs scaffold
+- [x] dgidb-rs scaffold
+- [x] uniprot-rs scaffold
+- [x] reactome-rs scaffold
 
-- [ ] S0.4.1 `cargo check --workspace` passes
-- [ ] S0.4.2 `cargo fmt --all -- --check` passes
-- [ ] S0.4.3 `cargo clippy --workspace -- -D warnings` passes
-- [ ] S0.4.4 CI green on `main`
+- [x] S0.4.1 `cargo check --workspace` passes
+- [x] S0.4.2 `cargo fmt --all -- --check` passes
+- [x] S0.4.3 `cargo clippy --workspace -- -D warnings` passes
+- [x] S0.4.4 CI green on `main`
 
 ---
 

@@ -1,0 +1,28 @@
+[package]
+name = "uniprot-rs"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85.0"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/SHA888/multiomics-rs"
+authors = ["Kresna Sucandra"]
+categories = ["science", "parser-implementations"]
+keywords = ["genomics", "proteomics", "arrow", "bioinformatics", "omics", "uniprot"]
+description = "UniProt Swiss-Prot TSV/XML reader → Arrow RecordBatches"
+
+[dependencies]
+arrow = { workspace = true }
+quick-xml = { workspace = true, optional = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+tempfile = { workspace = true }
+insta = { workspace = true }
+
+[features]
+default = ["tsv"]
+tsv = []
+xml = ["quick-xml"]
+rest-api = []

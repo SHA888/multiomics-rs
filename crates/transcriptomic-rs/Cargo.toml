@@ -1,0 +1,28 @@
+[package]
+name = "transcriptomic-rs"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85.0"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/SHA888/multiomics-rs"
+authors = ["Kresna Sucandra"]
+categories = ["science", "parser-implementations"]
+keywords = ["genomics", "transcriptomics", "arrow", "bioinformatics", "omics", "expression"]
+description = "Expression matrix assembly and normalization → Arrow RecordBatches"
+
+[dependencies]
+arrow = { workspace = true }
+rayon = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+geo-soft-rs = { version = "0.0.0", path = "../geo-soft-rs" }
+
+[dev-dependencies]
+criterion = { workspace = true }
+tempfile = { workspace = true }
+insta = { workspace = true }
+
+[[bench]]
+name = "normalization"
+harness = false
+
