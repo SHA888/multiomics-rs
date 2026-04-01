@@ -1,3 +1,5 @@
+<div align="center">
+
 # multiomics-rs
 
 **Composable Rust crates for multi-omics database ingestion — Arrow as the output contract.**
@@ -8,6 +10,8 @@
 
 [Architecture](ARCHITECTURE.md) · [Roadmap](TODO.md) · [Contributing](CONTRIBUTING.md)
 
+</div>
+
 ---
 
 ## What is this?
@@ -16,16 +20,16 @@
 multi-omics reference databases into Apache Arrow. Every crate reads a specific
 database format and emits Arrow RecordBatches — nothing more.
 
-| Crate | Source | Format | Status |
-|---|---|---|---|
-| [`geo-soft-rs`](crates/geo-soft-rs) | NCBI GEO | SOFT (line-based text) | 🚧 Pre-release |
-| [`transcriptomic-rs`](crates/transcriptomic-rs) | GEO expression matrices | normalized matrix | 🚧 Pre-release |
-| [`open-targets-rs`](crates/open-targets-rs) | Open Targets Platform | Parquet | 🚧 Pre-release |
-| [`gtex-rs`](crates/gtex-rs) | GTEx v8 | TSV (GCT) | 🚧 Pre-release |
-| [`string-rs`](crates/string-rs) | STRING v12 | TSV | 🚧 Pre-release |
-| [`dgidb-rs`](crates/dgidb-rs) | DGIdb | TSV | 🚧 Pre-release |
-| [`uniprot-rs`](crates/uniprot-rs) | UniProt Swiss-Prot | TSV / XML | 🚧 Pre-release |
-| [`reactome-rs`](crates/reactome-rs) | Reactome | TSV | 🚧 Pre-release |
+| Crate | Domain | Omics Area | Source | Format | Status |
+|---|---|---|---|---|---|
+| [`geo-soft-rs`](crates/geo-soft-rs) | Transcriptomics | Molecular | NCBI GEO | SOFT (line-based text) | 🚧 Pre-release |
+| [`transcriptomic-rs`](crates/transcriptomic-rs) | Transcriptomics | Molecular | GEO expression matrices | normalized matrix | 🚧 Pre-release |
+| [`open-targets-rs`](crates/open-targets-rs) | Drug target evidence | Translational | Open Targets Platform | Parquet | 🚧 Pre-release |
+| [`gtex-rs`](crates/gtex-rs) | Tissue gene expression | Genomics | GTEx v8 | TSV (GCT) | 🚧 Pre-release |
+| [`string-rs`](crates/string-rs) | Protein interactions | Proteomics | STRING v12 | TSV | 🚧 Pre-release |
+| [`dgidb-rs`](crates/dgidb-rs) | Drug-gene interactions | Pharmacology | DGIdb | TSV | 🚧 Pre-release |
+| [`uniprot-rs`](crates/uniprot-rs) | Protein annotation | Proteomics | UniProt Swiss-Prot | TSV / XML | 🚧 Pre-release |
+| [`reactome-rs`](crates/reactome-rs) | Biological pathways | Systems biology | Reactome | TSV | 🚧 Pre-release |
 
 ## Why Rust?
 
