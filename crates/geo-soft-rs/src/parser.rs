@@ -32,9 +32,9 @@ impl<R: BufRead> SoftReader<R> {
 
 impl SoftReader<std::io::BufReader<std::fs::File>> {
     /// Open a SOFT file from a path
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Returns an error if the file cannot be opened or read.
     pub fn open<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
         let file = std::fs::File::open(path)?;
@@ -45,9 +45,9 @@ impl SoftReader<std::io::BufReader<std::fs::File>> {
 
 impl SoftReader<std::io::BufReader<flate2::read::GzDecoder<std::fs::File>>> {
     /// Open a gzipped SOFT file
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Returns an error if the file cannot be opened or read.
     pub fn open_gz<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
         let file = std::fs::File::open(path)?;
@@ -105,9 +105,9 @@ pub struct ColumnDescriptor {
 
 impl GseRecord {
     /// Convert to Arrow `RecordBatch`
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Returns an error if the conversion fails.
     pub fn to_record_batch(&self) -> Result<RecordBatch> {
         // TODO: Implement Arrow conversion
@@ -117,9 +117,9 @@ impl GseRecord {
 
 impl GsmRecord {
     /// Convert to Arrow `RecordBatch`
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Returns an error if the conversion fails.
     pub fn to_record_batch(&self) -> Result<RecordBatch> {
         // TODO: Implement Arrow conversion
@@ -129,9 +129,9 @@ impl GsmRecord {
 
 impl GplRecord {
     /// Convert annotation to Arrow `RecordBatch`
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Returns an error if the conversion fails.
     pub fn annotation_batch(&self) -> Result<RecordBatch> {
         // TODO: Implement Arrow conversion

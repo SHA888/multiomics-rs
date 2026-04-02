@@ -25,4 +25,3 @@ insta = { workspace = true }
 [[bench]]
 name = "soft_parser"
 harness = false
-

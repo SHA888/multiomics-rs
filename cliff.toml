@@ -38,7 +38,6 @@ trim = true
 
 [git]
 conventional_commits = true
-filter_commits = false
 commit_parsers = [
     { message = "^feat", group = "Features" },
     { message = "^fix", group = "Bug Fixes" },

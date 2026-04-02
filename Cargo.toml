@@ -32,6 +32,10 @@ rayon = "1.11"
 thiserror = "2"
 anyhow    = "1"
 
+# Fix version conflicts
+getrandom = "0.4"
+ahash     = "0.8.11"
+
 # Dev
 criterion = { version = "0.8", features = ["html_reports"] }
 tempfile  = "3"
