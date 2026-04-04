@@ -2,7 +2,7 @@
 
 use arrow::record_batch::RecordBatch;
 
-use crate::{Error, Result};
+use crate::Result;
 
 /// Direction of protein interaction
 #[derive(Debug, Clone)]
@@ -19,12 +19,20 @@ pub struct ProteinInteractionReader {
 
 impl ProteinInteractionReader {
     /// Create reader from TSV file
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be accessed or parsed.
     pub fn from_tsv(_path: &str) -> Result<Self> {
         // TODO: Implement TSV reader
         todo!("Implement interaction reader")
     }
 
-    /// Read protein interactions as RecordBatch
+    /// Read protein interactions as `RecordBatch`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data cannot be read or parsed.
     pub fn read_interactions(&mut self) -> Result<RecordBatch> {
         // TODO: Implement interaction reading
         todo!("Implement interaction reading")

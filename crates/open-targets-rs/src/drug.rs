@@ -2,7 +2,7 @@
 
 use arrow::record_batch::RecordBatch;
 
-use crate::{Error, Result};
+use crate::Result;
 
 /// Reader for Open Targets drug data
 pub struct DrugReader {
@@ -11,12 +11,20 @@ pub struct DrugReader {
 
 impl DrugReader {
     /// Create reader from Parquet directory
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the directory cannot be accessed or is invalid.
     pub fn from_parquet(_path: &str) -> Result<Self> {
         // TODO: Implement Parquet reader
         todo!("Implement drug reader")
     }
 
-    /// Read drug mechanisms as RecordBatches
+    /// Read drug mechanisms as `RecordBatches`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data cannot be read or parsed.
     pub fn read_batches(&mut self) -> Result<Vec<RecordBatch>> {
         // TODO: Implement batch reading
         todo!("Implement batch reading")

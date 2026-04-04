@@ -1,6 +1,6 @@
 //! # string-rs
 //!
-//! STRING protein interaction TSV reader → Arrow RecordBatches.
+//! STRING protein interaction TSV reader → Arrow `RecordBatches`.
 //!
 //! ## Quick start
 //!
@@ -16,6 +16,7 @@
 #![warn(clippy::pedantic)]
 #![warn(clippy::cargo)]
 #![allow(clippy::module_name_repetitions)]
+#![allow(clippy::multiple_crate_versions)]
 
 pub mod error;
 pub mod info;

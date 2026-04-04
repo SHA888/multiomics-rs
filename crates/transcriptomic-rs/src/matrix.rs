@@ -2,7 +2,7 @@
 
 use arrow::record_batch::RecordBatch;
 
-use crate::{Error, Result};
+use crate::Result;
 
 /// Expression matrix with genes as rows and samples as columns
 #[derive(Debug, Clone)]
@@ -17,6 +17,11 @@ pub struct MatrixBuilder;
 
 impl MatrixBuilder {
     /// Build expression matrix from SOFT reader
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SOFT data cannot be parsed or the matrix cannot
+    /// be assembled.
     pub fn from_soft(
         _reader: geo_soft_rs::SoftReader<std::io::BufReader<std::fs::File>>,
     ) -> Result<ExpressionMatrix> {
@@ -25,13 +30,13 @@ impl MatrixBuilder {
     }
 }
 
-/// Sample metadata as Arrow RecordBatch
+/// Sample metadata as Arrow `RecordBatch`
 #[derive(Debug, Clone)]
 pub struct SampleMetadata {
     pub data: RecordBatch,
 }
 
-/// Platform annotation as Arrow RecordBatch
+/// Platform annotation as Arrow `RecordBatch`
 #[derive(Debug, Clone)]
 pub struct PlatformAnnotation {
     pub data: RecordBatch,

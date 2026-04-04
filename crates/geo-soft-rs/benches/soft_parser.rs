@@ -1,7 +1,8 @@
 //! Benchmark for SOFT parsing
 
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use geo_soft_rs::SoftReader;
+use std::hint::black_box;
+
+use criterion::{Criterion, criterion_group, criterion_main};
 
 fn bench_soft_parsing(c: &mut Criterion) {
     // TODO: Add actual benchmark with test data

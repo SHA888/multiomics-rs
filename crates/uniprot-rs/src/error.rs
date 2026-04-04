@@ -5,7 +5,7 @@ use thiserror::Error;
 /// Result type for uniprot-rs
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Errors that can occur when reading UniProt data
+/// Errors that can occur when reading `UniProt` data
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("I/O error: {0}")]

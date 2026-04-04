@@ -1,7 +1,8 @@
 //! Benchmark for expression matrix normalization
 
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use transcriptomic_rs::{ExpressionMatrix, Normalize};
+use std::hint::black_box;
+
+use criterion::{Criterion, criterion_group, criterion_main};
 
 fn bench_log2_normalization(c: &mut Criterion) {
     // TODO: Add actual benchmark with test data

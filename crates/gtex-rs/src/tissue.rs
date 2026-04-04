@@ -9,7 +9,8 @@ pub struct TissueExpression {
 }
 
 impl TissueExpression {
-    /// Create from wide format RecordBatch
+    /// Create from wide format `RecordBatch`
+    #[must_use]
     pub fn from_wide(_wide_batch: &RecordBatch) -> Self {
         // TODO: Implement wide to long conversion
         todo!("Implement wide to long conversion")
