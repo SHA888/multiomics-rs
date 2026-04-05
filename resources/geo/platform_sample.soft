@@ -1,0 +1,8 @@
+^PLATFORM = GPL001
+!Platform_title = Test Platform
+!Platform_technology = microarray
+!Platform_table_begin
+ID	SEQUENCE	GB_ACC
+probe1	ATCG	GB001
+probe2	GCTA	GB002
+!Platform_table_end

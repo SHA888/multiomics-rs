@@ -21,6 +21,7 @@ Thumbs.db
 # Data files (common in multi-omics work)
 *.soft
 *.soft.gz
+!resources/geo/*.soft
 *.gct
 *.gct.gz
 *.tsv

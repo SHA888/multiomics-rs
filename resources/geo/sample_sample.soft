@@ -1,0 +1,10 @@
+^SAMPLE = GSM001
+!Sample_title = Test Sample
+!Sample_platform_id = GPL001
+!Sample_characteristics_ch1 = disease state: sepsis
+!Sample_table_begin
+ID_REF	VALUE
+probe1	1.5
+probe2	2.1
+probe3	NA
+!sample_table_end

@@ -1,0 +1,8 @@
+^SERIES = GSE65682
+!Series_title = Test Series
+!Series_summary = This is a test series
+!Series_overall_design = Test design
+!Series_submission_date = 2023-01-01
+!Series_sample_id = GSM001
+!Series_sample_id = GSM002
+!Series_platform_id = GPL001

@@ -1,0 +1,35 @@
+^PLATFORM = GPL001
+!Platform_title = Test Platform
+!Platform_technology = microarray
+!Platform_table_begin
+ID	SEQUENCE
+probe1	ATCG
+probe2	GCTA
+!Platform_table_end
+
+^SAMPLE = GSM001
+!Sample_title = Sample 1
+!Sample_platform_id = GPL001
+!Sample_table_begin
+ID_REF	VALUE
+probe1	1.5
+probe2	2.1
+!sample_table_end
+
+^SAMPLE = GSM002
+!Sample_title = Sample 2
+!Sample_platform_id = GPL001
+!Sample_table_begin
+ID_REF	VALUE
+probe1	1.8
+probe2	2.3
+!sample_table_end
+
+^SERIES = GSE65682
+!Series_title = Test Series
+!Series_summary = This is a test series
+!Series_overall_design = Test design
+!Series_submission_date = 2023-01-01
+!Series_sample_id = GSM001
+!Series_sample_id = GSM002
+!Series_platform_id = GPL001

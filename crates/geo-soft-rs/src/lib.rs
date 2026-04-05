@@ -26,4 +26,4 @@ pub mod error;
 pub mod parser;
 
 pub use error::{Error, Result};
-pub use parser::{GplRecord, GseRecord, GsmRecord, SoftReader};
+pub use parser::{GdsRecord, GdsSubset, GplRecord, GseRecord, GsmRecord, SoftReader};

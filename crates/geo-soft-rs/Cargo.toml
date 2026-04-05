@@ -16,6 +16,7 @@ flate2 = { workspace = true }
 chrono = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
+memchr = "2"
 
 [dev-dependencies]
 criterion = { workspace = true }

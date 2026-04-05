@@ -1,0 +1,44 @@
+^DATABASE = Geo
+!Database_name = Gene Expression Omnibus (GEO)
+^DATASET = GDS6063
+!dataset_title = Influenza A effect on plasmacytoid dendritic cells
+!dataset_description = Analysis of primary plasmacytoid dendritic cells (pDC) exposed to influenza A for 8 hours ex vivo.
+!dataset_type = Expression profiling by array
+!dataset_pubmed_id = 26826244
+!dataset_platform = GPL10558
+!dataset_platform_organism = Homo sapiens
+!dataset_platform_technology_type = oligonucleotide beads
+!dataset_feature_count = 48107
+!dataset_sample_organism = Homo sapiens
+!dataset_sample_type = RNA
+!dataset_channel_count = 1
+!dataset_sample_count = 10
+!dataset_value_type = count
+!dataset_reference_series = GSE68849
+^SUBSET = GDS6063_1
+!subset_dataset_id = GDS6063
+!subset_description = influenza A
+!subset_sample_id = GSM1684096,GSM1684098,GSM1684100
+!subset_type = infection
+^SUBSET = GDS6063_2
+!subset_dataset_id = GDS6063
+!subset_description = no virus control
+!subset_sample_id = GSM1684095,GSM1684097,GSM1684099
+!subset_type = control
+^DATASET = GDS6063
+#ID_REF = Platform reference identifier
+#IDENTIFIER = identifier
+#GSM1684096 = Value for GSM1684096: Donor 1 - Influenza treated - 8h
+#GSM1684098 = Value for GSM1684098: Donor 2 - Influenza treated - 8h
+#GSM1684100 = Value for GSM1684100: Donor 3 - Influenza treated - 8h
+#GSM1684095 = Value for GSM1684095: Donor 1 - No virus control - 8h
+#GSM1684097 = Value for GSM1684097: Donor 2 - No virus control - 8h
+#GSM1684099 = Value for GSM1684099: Donor 3 - No virus control - 8h
+#Gene symbol = Entrez Gene symbol
+#Gene ID = Entrez Gene identifier
+!dataset_table_begin
+ID_REF	IDENTIFIER	GSM1684096	GSM1684098	GSM1684100	GSM1684095	GSM1684097	GSM1684099	Gene symbol	Gene ID
+ILMN_1343291	EEF1A1	22303.3	24776.1	26775.3	23599.3	25980.2	24776.1	EEF1A1	1915
+ILMN_1343295	GAPDH	7732.65	5296.75	6430.16	6405.33	6553.48	7699.22	GAPDH	2597
+ILMN_1343296	null	null	null	null	null	null	null	null	null
+!dataset_table_end
