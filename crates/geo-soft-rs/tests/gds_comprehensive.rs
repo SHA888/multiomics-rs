@@ -1,7 +1,5 @@
 //! Comprehensive test for all GDS parser fixes
 
-use geo_soft_rs::SoftReader;
-
 #[test]
 fn test_all_gds_fixes() -> geo_soft_rs::Result<()> {
     let soft_content = r#"^DATABASE = Geo
@@ -38,7 +36,7 @@ ILMN_1343296	NULL	NULL	NULL	NULL
     std::fs::write(&temp_file, soft_content)?;
 
     // Parse the file
-    let mut reader = SoftReader::open(&temp_file)?;
+    let mut reader = geo_soft_rs::open_soft_file(&temp_file)?;
 
     // Verify no series (should not hang)
     let series = reader.next_series();

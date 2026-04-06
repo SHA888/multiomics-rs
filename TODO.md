@@ -159,7 +159,7 @@ ID_REF\tIDENTIFIER\tGSM1234\tGSM1235\t...
 !subset_sample_id = GSM1234
 ```
 
-### [ ] G1.0 GDS entity support
+### [x] G1.0 GDS entity support
 > GEO hosts 4,348 curated DataSets in SOFT format — omitting this blocks that corpus
 
 - [x] G1.0.1 `GdsRecord` struct:
@@ -188,7 +188,7 @@ ID_REF\tIDENTIFIER\tGSM1234\tGSM1235\t...
   - null sentinel set applies to all Float64 columns
   - sample files [soft](resources/geo)
 
-### [ ] G1.1 SOFT format parser (state machine)
+### [x] G1.1 SOFT format parser (state machine)
 
 State machine — all transitions symmetric; any `^` line while inside an entity emits the
 current record and starts the new entity state:
@@ -213,10 +213,10 @@ In any entity state:
   EOF     → emit pending record
 ```
 
-- [ ] G1.1.1 `SoftReader` struct — wraps `BufReader<R: Read>`
+- [x] G1.1.1 `SoftReader` struct — wraps `BufReader<R: Read>`
   - handles gzip via `flate2::read::GzDecoder` (auto-detect `.gz` suffix)
   - line-by-line state machine per diagram above
-- [ ] G1.1.2 `GseRecord` struct:
+- [x] G1.1.2 `GseRecord` struct:
   - `local_id: String` (value from `^SERIES = <this>`)
   - `geo_accession: Option<String>` (from `!Series_geo_accession`)
   - `title: String`
@@ -227,7 +227,7 @@ In any entity state:
   - `contributor: Vec<String>`
   - `pubmed_id: Vec<u32>`
   - `metadata: HashMap<String, Vec<String>>` (catch-all for non-modeled fields)
-- [ ] G1.1.3 `GsmRecord` struct:
+- [x] G1.1.3 `GsmRecord` struct:
   - `local_id: String` (value from `^SAMPLE = <this>`)
   - `geo_accession: Option<String>` (from `!Sample_geo_accession`)
   - `title: String`
@@ -242,7 +242,7 @@ In any entity state:
   - `description: Vec<String>`
   - `metadata: HashMap<String, Vec<String>>` (catch-all including download-only fields)
   - `data_table: Option<DataTable>`
-- [ ] G1.1.4 `GplRecord` struct:
+- [x] G1.1.4 `GplRecord` struct:
   - `local_id: String` (value from `^PLATFORM = <this>`)
   - `geo_accession: Option<String>` (from `!Platform_geo_accession`)
   - `title: String`
@@ -257,19 +257,19 @@ In any entity state:
   - `column_descs: HashMap<String, String>` (from `#` hash lines: col_name → description)
   - `metadata: HashMap<String, Vec<String>>` (catch-all)
   - `annotation_table: Option<DataTable>`
-- [ ] G1.1.5 `DataTable` struct:
+- [x] G1.1.5 `DataTable` struct:
   - `columns: Vec<ColumnDescriptor>` (name + description from `#` hash lines)
   - `rows: Vec<Vec<String>>` (raw strings — typed at Arrow conversion)
-- [ ] G1.1.6 Multi-value field handling (`!key = val` appearing multiple times → `Vec<String>`)
-- [ ] G1.1.7 gzip streaming without full decompression into memory
-- [ ] G1.1.8 Distinguish `^local_id` from `!*_geo_accession` for all entity types —
+- [x] G1.1.6 Multi-value field handling (`!key = val` appearing multiple times → `Vec<String>`)
+- [x] G1.1.7 gzip streaming without full decompression into memory
+- [x] G1.1.8 Distinguish `^local_id` from `!*_geo_accession` for all entity types —
             these are different values and must not be conflated
-- [ ] G1.1.9 `channel_count` detection: prefer `!Sample_channel_count`; fall back to
+- [x] G1.1.9 `channel_count` detection: prefer `!Sample_channel_count`; fall back to
             counting distinct `_ch[n]` suffixes seen in attributes
-- [ ] G1.1.10 Line ending normalization: strip `\r` before field parsing (`\r\n` and bare `\r`)
-- [ ] G1.1.11 UTF-8 BOM (`\xEF\xBB\xBF`) stripping on first line of file
-- [ ] G1.1.12 Blank line tolerance: skip silently in all states
-- [ ] G1.1.13 Download-only attribute tolerance: `_status`, `_submission_date`,
+- [x] G1.1.10 Line ending normalization: strip `\r` before field parsing (`\r\n` and bare `\r`)
+- [x] G1.1.11 UTF-8 BOM (`\xEF\xBB\xBF`) stripping on first line of file
+- [x] G1.1.12 Blank line tolerance: skip silently in all states
+- [x] G1.1.13 Download-only attribute tolerance: `_status`, `_submission_date`,
              `_last_update_date`, `_row_count`, `_contact_*` → route to `metadata` HashMap,
              never return a parse error
 

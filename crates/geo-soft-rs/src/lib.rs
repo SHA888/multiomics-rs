@@ -5,12 +5,12 @@
 //! ## Quick start
 //!
 //! ```rust,no_run
-//! use geo_soft_rs::SoftReader;
+//! use geo_soft_rs::open_soft_file_gz;
 //!
-//! let mut reader = SoftReader::open("GSE65682_family.soft.gz")?;
+//! let mut reader = open_soft_file_gz("GSE65682_family.soft.gz")?;
 //! for record in reader.series() {
 //!     let gse = record?;
-//!     println!("{}: {} samples", gse.accession, gse.sample_ids.len());
+//!     println!("{}: {} samples", gse.local_id, gse.sample_ids.len());
 //!     // TODO: Get expression matrix when implemented
 //! }
 //! # Ok::<(), Box<dyn std::error::Error>>(())
@@ -26,4 +26,7 @@ pub mod error;
 pub mod parser;
 
 pub use error::{Error, Result};
-pub use parser::{GdsRecord, GdsSubset, GplRecord, GseRecord, GsmRecord, SoftReader};
+pub use parser::{
+    GdsRecord, GdsSubset, GplRecord, GseRecord, GsmRecord, SoftReader, open_soft_file,
+    open_soft_file_gz,
+};

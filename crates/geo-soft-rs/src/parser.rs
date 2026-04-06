@@ -1,6 +1,6 @@
 //! SOFT format parser
 
-use std::{collections::HashMap, io::BufRead};
+use std::{collections::HashMap, io::BufRead, path::Path};
 
 use arrow::record_batch::RecordBatch;
 
@@ -32,6 +32,7 @@ pub struct SoftReader<R: BufRead> {
     current_subset: Option<GdsSubset>,
     current_table: Option<DataTable>,
     eof_reached: bool,
+    bom_stripped: bool,
 }
 
 impl<R: BufRead> SoftReader<R> {
@@ -48,11 +49,11 @@ impl<R: BufRead> SoftReader<R> {
             current_subset: None,
             current_table: None,
             eof_reached: false,
+            bom_stripped: false,
         }
     }
 
     /// Iterate over GSE records
-    #[must_use]
     pub fn series(&mut self) -> impl Iterator<Item = Result<GseRecord>> + '_ {
         std::iter::from_fn(move || self.next_series())
     }
@@ -95,8 +96,19 @@ impl<R: BufRead> SoftReader<R> {
         }
 
         self.line_number += 1;
-        let line = line.trim_end();
 
+        // Strip UTF-8 BOM on first line (avoid allocation by slicing)
+        let line = if !self.bom_stripped && line.starts_with('\u{FEFF}') {
+            self.bom_stripped = true;
+            &line[3..] // BOM is 3 bytes in UTF-8
+        } else {
+            line.as_str()
+        };
+
+        // Normalize line endings and trim whitespace
+        let line = line.trim_end_matches(['\r', '\n']).trim();
+
+        // Skip blank lines silently in all states
         if line.is_empty() {
             return Ok(None);
         }
@@ -136,7 +148,7 @@ impl<R: BufRead> SoftReader<R> {
     fn handle_series_state(&mut self, line: &str) -> Result<Option<GseRecord>> {
         if line.starts_with('^') {
             // Start of new section - return current series
-            return Ok(self.current_series.take());
+            Ok(self.current_series.take())
         } else if let Some(key_value) = line.strip_prefix('!') {
             self.parse_series_metadata(key_value)
         } else {
@@ -147,13 +159,22 @@ impl<R: BufRead> SoftReader<R> {
     /// Handle lines when in platform state
     fn handle_platform_state(&mut self, line: &str) -> Result<Option<GseRecord>> {
         if line.starts_with('^') {
-            // Start of new section
-            if let Some(_) = line.strip_prefix("^PLATFORM = ") {
-                // New platform - finish current one
-                self.current_platform = None;
+            // Start of new section - return current series if any
+            // Platform entity is consumed by series, not emitted directly
+            self.current_platform = None;
+
+            if line.strip_prefix("^PLATFORM = ").is_some() {
+                // New platform - will be started by idle handler
+                self.state = ParseState::Idle;
+                Ok(self.current_series.take())
+            } else if line.strip_prefix("^SERIES = ").is_some() {
+                // New series - return current series if any
+                self.state = ParseState::Idle;
+                Ok(self.current_series.take())
+            } else if line.strip_prefix("^SAMPLE = ").is_some() {
+                // Sample start - continue in series context
                 Ok(None)
             } else {
-                // Other entity - return None for now (we're only parsing series)
                 Ok(None)
             }
         } else if let Some(key_value) = line.strip_prefix('!') {
@@ -167,12 +188,18 @@ impl<R: BufRead> SoftReader<R> {
     fn handle_sample_state(&mut self, line: &str) -> Result<Option<GseRecord>> {
         if line.starts_with('^') {
             // Start of new section
-            if let Some(_) = line.strip_prefix("^SAMPLE = ") {
+            if line.strip_prefix("^SAMPLE = ").is_some() {
                 // New sample - finish current one
                 self.current_sample = None;
                 Ok(None)
+            } else if line.strip_prefix("^SERIES = ").is_some() {
+                // New series - return current series
+                self.current_sample = None;
+                self.state = ParseState::Idle;
+                Ok(self.current_series.take())
             } else {
-                // Other entity - return None for now
+                // Other entity - continue in series context
+                self.current_sample = None;
                 Ok(None)
             }
         } else if let Some(key_value) = line.strip_prefix('!') {
@@ -186,7 +213,7 @@ impl<R: BufRead> SoftReader<R> {
     fn handle_dataset_state(&mut self, line: &str) -> Result<Option<GseRecord>> {
         if line.starts_with('^') {
             // Start of new section - finalize current dataset
-            if let Some(_) = line.strip_prefix("^DATASET = ") {
+            if line.strip_prefix("^DATASET = ").is_some() {
                 // New dataset - current one is lost (no storage for multiple datasets)
                 self.current_dataset = None;
                 Ok(None)
@@ -212,7 +239,7 @@ impl<R: BufRead> SoftReader<R> {
                 }
             }
 
-            if let Some(_) = line.strip_prefix("^SUBSET = ") {
+            if line.strip_prefix("^SUBSET = ").is_some() {
                 // New subset - start fresh
                 self.start_subset(line.strip_prefix("^SUBSET = ").unwrap().trim())
             } else {
@@ -388,14 +415,15 @@ impl<R: BufRead> SoftReader<R> {
     fn start_series(&mut self, accession: &str) -> Option<GseRecord> {
         self.state = ParseState::InSeries;
         self.current_series = Some(GseRecord {
-            accession: accession.to_string(),
+            local_id: accession.to_string(),
+            geo_accession: None,
             title: String::new(),
-            summary: String::new(),
+            summary: Vec::new(),
             overall_design: String::new(),
-            submission_date: chrono::NaiveDate::from_ymd_opt(2000, 1, 1)
-                .unwrap_or_else(|| chrono::NaiveDate::from_ymd_opt(2000, 1, 1).unwrap()),
+            series_type: Vec::new(),
             sample_ids: Vec::new(),
-            platform_ids: Vec::new(),
+            contributor: Vec::new(),
+            pubmed_id: Vec::new(),
             metadata: HashMap::new(),
         });
         None
@@ -405,9 +433,19 @@ impl<R: BufRead> SoftReader<R> {
     fn start_platform(&mut self, accession: &str) -> Result<Option<GseRecord>> {
         self.state = ParseState::InPlatform;
         self.current_platform = Some(GplRecord {
-            accession: accession.to_string(),
+            local_id: accession.to_string(),
+            geo_accession: None,
             title: String::new(),
             technology: String::new(),
+            distribution: String::new(),
+            organism: Vec::new(),
+            manufacturer: String::new(),
+            manufacture_protocol: Vec::new(),
+            description: Vec::new(),
+            contributor: Vec::new(),
+            pubmed_id: Vec::new(),
+            column_descs: HashMap::new(),
+            metadata: HashMap::new(),
             annotation_table: None,
         });
         Ok(None)
@@ -417,10 +455,19 @@ impl<R: BufRead> SoftReader<R> {
     fn start_sample(&mut self, accession: &str) -> Result<Option<GseRecord>> {
         self.state = ParseState::InSample;
         self.current_sample = Some(GsmRecord {
-            accession: accession.to_string(),
+            local_id: accession.to_string(),
+            geo_accession: None,
             title: String::new(),
-            characteristics: HashMap::new(),
             platform_id: String::new(),
+            channel_count: 1, // Default to single channel
+            source_name: Vec::new(),
+            organism: Vec::new(),
+            characteristics: Vec::new(),
+            molecule: Vec::new(),
+            label: Vec::new(),
+            data_processing: Vec::new(),
+            description: Vec::new(),
+            metadata: HashMap::new(),
             data_table: None,
         });
         Ok(None)
@@ -467,20 +514,20 @@ impl<R: BufRead> SoftReader<R> {
             if let Some(series) = &mut self.current_series {
                 match key {
                     "Series_title" => series.title = value.to_string(),
-                    "Series_summary" => series.summary = value.to_string(),
+                    "Series_geo_accession" => series.geo_accession = Some(value.to_string()),
+                    "Series_summary" => series.summary.push(value.to_string()),
                     "Series_overall_design" => series.overall_design = value.to_string(),
-                    "Series_submission_date" => {
-                        series.submission_date =
-                            chrono::NaiveDate::parse_from_str(value, "%b %d %Y")
-                                .or_else(|_| chrono::NaiveDate::parse_from_str(value, "%B %d %Y"))
-                                .or_else(|_| chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d"))
-                                .unwrap_or_else(|_| {
-                                    chrono::NaiveDate::from_ymd_opt(2000, 1, 1).unwrap()
-                                });
-                    }
+                    "Series_type" => series.series_type.push(value.to_string()),
                     "Series_sample_id" => series.sample_ids.push(value.to_string()),
-                    "Series_platform_id" => series.platform_ids.push(value.to_string()),
+                    "Series_contributor" => series.contributor.push(value.to_string()),
+                    "Series_pubmed_id" => {
+                        if let Ok(id) = value.parse::<u32>() {
+                            series.pubmed_id.push(id);
+                        }
+                    }
                     _ => {
+                        // Route all unrecognized attributes to metadata HashMap
+                        // (includes download-only fields like _status, _submission_date, etc.)
                         series
                             .metadata
                             .entry(key.to_string())
@@ -526,7 +573,13 @@ impl<R: BufRead> SoftReader<R> {
             if let Some(sample) = &mut self.current_sample {
                 match key {
                     "Sample_title" => sample.title = value.to_string(),
+                    "Sample_geo_accession" => sample.geo_accession = Some(value.to_string()),
                     "Sample_platform_id" => sample.platform_id = value.to_string(),
+                    "Sample_channel_count" => {
+                        if let Ok(count) = value.parse::<u8>() {
+                            sample.channel_count = count;
+                        }
+                    }
                     "!sample_table_begin" => {
                         self.state = ParseState::InSampleTable;
                         self.current_table = Some(DataTable {
@@ -535,11 +588,38 @@ impl<R: BufRead> SoftReader<R> {
                         });
                     }
                     key if key.starts_with("Sample_characteristics_") => {
-                        // Extract characteristics type from the key
-                        if let Some(char_type) = key.strip_prefix("Sample_characteristics_") {
-                            sample
-                                .characteristics
-                                .insert(char_type.to_string(), value.to_string());
+                        // Extract channel and characteristics type
+                        if let Some(char_key) = key.strip_prefix("Sample_characteristics_") {
+                            // Parse channel number and characteristic type
+                            if let Some((channel_str, char_type)) = char_key.split_once("_ch") {
+                                // This is channel-specific: characteristics_ch1_disease
+                                if let Ok(channel_num) = channel_str.parse::<usize>() {
+                                    // Bounds check: channel count must fit in u8 (max 255)
+                                    if channel_num > 254 {
+                                        return Err(Error::InvalidFormat(format!(
+                                            "Channel number {channel_num} exceeds maximum of 255"
+                                        )));
+                                    }
+                                    // Update channel count if needed
+                                    let new_count = (channel_num + 1) as u8;
+                                    if new_count > sample.channel_count {
+                                        sample.channel_count = new_count;
+                                    }
+                                    // Ensure we have enough channel slots
+                                    while sample.characteristics.len() <= channel_num {
+                                        sample.characteristics.push(HashMap::new());
+                                    }
+                                    sample.characteristics[channel_num]
+                                        .insert(char_type.to_string(), value.to_string());
+                                }
+                            } else {
+                                // Single channel - add to channel 0
+                                if sample.characteristics.is_empty() {
+                                    sample.characteristics.push(HashMap::new());
+                                }
+                                sample.characteristics[0]
+                                    .insert(char_key.to_string(), value.to_string());
+                            }
                         }
                     }
                     _ => {} // Handle other sample metadata as needed
@@ -616,17 +696,32 @@ impl<R: BufRead> SoftReader<R> {
     }
 }
 
-impl SoftReader<std::io::BufReader<std::fs::File>> {
-    /// Open a SOFT file from a path
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the file cannot be opened or read.
-    pub fn open<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
-        let file = std::fs::File::open(path)?;
-        let reader = std::io::BufReader::new(file);
-        Ok(Self::new(reader))
-    }
+/// Open a SOFT file from a path with auto-detect gzip
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be opened or read.
+pub fn open_soft_file<P: AsRef<Path>>(
+    path: P,
+) -> Result<SoftReader<std::io::BufReader<std::fs::File>>> {
+    let path = path.as_ref();
+    let file = std::fs::File::open(path)?;
+    let reader = std::io::BufReader::new(file);
+    Ok(SoftReader::new(reader))
+}
+
+/// Open a gzipped SOFT file
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be opened or read.
+pub fn open_soft_file_gz<P: AsRef<Path>>(
+    path: P,
+) -> Result<SoftReader<std::io::BufReader<flate2::read::GzDecoder<std::fs::File>>>> {
+    let file = std::fs::File::open(path)?;
+    let gz_reader = flate2::read::GzDecoder::new(file);
+    let reader = std::io::BufReader::new(gz_reader);
+    Ok(SoftReader::new(reader))
 }
 
 impl SoftReader<std::io::BufReader<flate2::read::GzDecoder<std::fs::File>>> {
@@ -672,32 +767,53 @@ pub struct GdsSubset {
 /// Represents a GSE (Series) record
 #[derive(Debug, Clone)]
 pub struct GseRecord {
-    pub accession: String,
+    pub local_id: String,
+    pub geo_accession: Option<String>,
     pub title: String,
-    pub summary: String,
+    pub summary: Vec<String>,
     pub overall_design: String,
-    pub submission_date: chrono::NaiveDate,
+    pub series_type: Vec<String>,
     pub sample_ids: Vec<String>,
-    pub platform_ids: Vec<String>,
+    pub contributor: Vec<String>,
+    pub pubmed_id: Vec<u32>,
     pub metadata: std::collections::HashMap<String, Vec<String>>,
 }
 
 /// Represents a GSM (Sample) record
 #[derive(Debug, Clone)]
 pub struct GsmRecord {
-    pub accession: String,
+    pub local_id: String,
+    pub geo_accession: Option<String>,
     pub title: String,
-    pub characteristics: std::collections::HashMap<String, String>,
     pub platform_id: String,
+    pub channel_count: u8,
+    pub source_name: Vec<String>,
+    pub organism: Vec<Vec<String>>,
+    pub characteristics: Vec<std::collections::HashMap<String, String>>,
+    pub molecule: Vec<String>,
+    pub label: Vec<String>,
+    pub data_processing: Vec<String>,
+    pub description: Vec<String>,
+    pub metadata: std::collections::HashMap<String, Vec<String>>,
     pub data_table: Option<DataTable>,
 }
 
 /// Represents a GPL (Platform) record
 #[derive(Debug, Clone)]
 pub struct GplRecord {
-    pub accession: String,
+    pub local_id: String,
+    pub geo_accession: Option<String>,
     pub title: String,
     pub technology: String,
+    pub distribution: String,
+    pub organism: Vec<String>,
+    pub manufacturer: String,
+    pub manufacture_protocol: Vec<String>,
+    pub description: Vec<String>,
+    pub contributor: Vec<String>,
+    pub pubmed_id: Vec<u32>,
+    pub column_descs: std::collections::HashMap<String, String>,
+    pub metadata: std::collections::HashMap<String, Vec<String>>,
     pub annotation_table: Option<DataTable>,
 }
 

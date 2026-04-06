@@ -1,6 +1,6 @@
 //! Test GDS entity parsing
 
-use geo_soft_rs::SoftReader;
+use geo_soft_rs::Result;
 
 #[test]
 fn test_gds_parsing() -> geo_soft_rs::Result<()> {
@@ -26,7 +26,7 @@ probe2	gene2	0.8	1.3
     std::fs::write(&temp_file, soft_content)?;
 
     // Parse the file
-    let mut reader = SoftReader::open(&temp_file)?;
+    let mut reader = geo_soft_rs::open_soft_file(&temp_file)?;
 
     // Try to get the first series (should be None since we only have GDS)
     let series = reader.next_series();

@@ -1,7 +1,5 @@
 //! Test GDS Arrow conversion
 
-use geo_soft_rs::SoftReader;
-
 #[test]
 fn test_gds_to_record_batch() -> geo_soft_rs::Result<()> {
     let soft_content = r#"^DATASET = GDS6063
@@ -28,7 +26,7 @@ ILMN_1343296	null	null	null	null
     std::fs::write(&temp_file, soft_content)?;
 
     // Parse the file
-    let mut reader = SoftReader::open(&temp_file)?;
+    let mut reader = geo_soft_rs::open_soft_file(&temp_file)?;
 
     // Try to get the first series (should be None since we only have GDS)
     let series = reader.next_series();
