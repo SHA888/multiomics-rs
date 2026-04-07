@@ -28,6 +28,10 @@ const DUAL_CH2_COL: usize = 4;
 /// * `Ok(None)` - Arrow null for recognized null sentinels
 /// * `Ok(Some(f))` - Valid float value
 /// * `Err` - Non-null, non-parseable string (surface to caller)
+///
+/// # Errors
+///
+/// Returns an error if the string is not a valid float and is not a recognized null sentinel.
 pub fn parse_f64_nullable(s: &str) -> Result<Option<f64>> {
     let trimmed = s.trim();
 
@@ -37,18 +41,14 @@ pub fn parse_f64_nullable(s: &str) -> Result<Option<f64>> {
         || trimmed.eq_ignore_ascii_case("na")
         || trimmed.eq_ignore_ascii_case("n/a")
         || trimmed.eq_ignore_ascii_case("nan")
-        || trimmed.eq_ignore_ascii_case("none")
-    {
+        || trimmed.eq_ignore_ascii_case("none") {
         return Ok(None);
     }
 
     // Try to parse as float
     match trimmed.parse::<f64>() {
         Ok(value) => Ok(Some(value)),
-        Err(_) => Err(Error::InvalidFormat(format!(
-            "Invalid float value: '{}'",
-            s
-        ))),
+        Err(_) => Err(Error::InvalidFormat(format!("Invalid float value: '{s}'"))),
     }
 }
 
@@ -122,8 +122,7 @@ impl<R: BufRead> SoftReader<R> {
                         // No series and EOF reached - we're done
                         return None;
                     }
-                    // No series yet, continue parsing
-                    continue;
+                    // No series yet, continue parsing (implicit continue at end of loop)
                 }
                 Err(e) => return Some(Err(e)),
             }
@@ -161,12 +160,12 @@ impl<R: BufRead> SoftReader<R> {
 
         // Handle different line types based on state
         match self.state {
-            ParseState::Idle => self.handle_idle_state(line),
-            ParseState::InSeries => self.handle_series_state(line),
-            ParseState::InPlatform => self.handle_platform_state(line),
+            ParseState::Idle => Ok(self.handle_idle_state(line)),
+            ParseState::InSeries => Ok(self.handle_series_state(line)),
+            ParseState::InPlatform => Ok(self.handle_platform_state(line)),
             ParseState::InSample => self.handle_sample_state(line),
-            ParseState::InDataset => self.handle_dataset_state(line),
-            ParseState::InSubset => self.handle_subset_state(line),
+            ParseState::InDataset => Ok(self.handle_dataset_state(line)),
+            ParseState::InSubset => Ok(self.handle_subset_state(line)),
             ParseState::InPlatformTable => self.handle_platform_table_state(line),
             ParseState::InSampleTable => self.handle_sample_table_state(line),
             ParseState::InDatasetTable => self.handle_dataset_table_state(line),
@@ -174,9 +173,9 @@ impl<R: BufRead> SoftReader<R> {
     }
 
     /// Handle lines when in idle state
-    fn handle_idle_state(&mut self, line: &str) -> Result<Option<GseRecord>> {
+    fn handle_idle_state(&mut self, line: &str) -> Option<GseRecord> {
         if let Some(accession) = line.strip_prefix("^SERIES = ") {
-            Ok(self.start_series(accession.trim()))
+            self.start_series(accession.trim())
         } else if let Some(accession) = line.strip_prefix("^PLATFORM = ") {
             self.start_platform(accession.trim())
         } else if let Some(accession) = line.strip_prefix("^SAMPLE = ") {
@@ -186,24 +185,24 @@ impl<R: BufRead> SoftReader<R> {
         } else if let Some(accession) = line.strip_prefix("^SUBSET = ") {
             self.start_subset(accession.trim())
         } else {
-            Ok(None)
+            None
         }
     }
 
     /// Handle lines when in series state
-    fn handle_series_state(&mut self, line: &str) -> Result<Option<GseRecord>> {
+    fn handle_series_state(&mut self, line: &str) -> Option<GseRecord> {
         if line.starts_with('^') {
             // Start of new section - return current series
-            return Ok(self.current_series.take());
+            self.current_series.take()
         } else if let Some(key_value) = line.strip_prefix('!') {
             self.parse_series_metadata(key_value)
         } else {
-            Ok(None)
+            None
         }
     }
 
     /// Handle lines when in platform state
-    fn handle_platform_state(&mut self, line: &str) -> Result<Option<GseRecord>> {
+    fn handle_platform_state(&mut self, line: &str) -> Option<GseRecord> {
         if line.starts_with('^') {
             // Start of new section - return current series if any
             // Platform entity is consumed by series, not emitted directly
@@ -212,21 +211,21 @@ impl<R: BufRead> SoftReader<R> {
             if line.strip_prefix("^PLATFORM = ").is_some() {
                 // New platform - will be started by idle handler
                 self.state = ParseState::Idle;
-                Ok(self.current_series.take())
+                self.current_series.take()
             } else if line.strip_prefix("^SERIES = ").is_some() {
                 // New series - return current series if any
                 self.state = ParseState::Idle;
-                Ok(self.current_series.take())
+                self.current_series.take()
             } else if line.strip_prefix("^SAMPLE = ").is_some() {
                 // Sample start - continue in series context
-                Ok(None)
+                None
             } else {
-                Ok(None)
+                None
             }
         } else if let Some(key_value) = line.strip_prefix('!') {
             self.parse_platform_metadata(key_value)
         } else {
-            Ok(None)
+            None
         }
     }
 
@@ -256,27 +255,27 @@ impl<R: BufRead> SoftReader<R> {
     }
 
     /// Handle lines when in dataset state
-    fn handle_dataset_state(&mut self, line: &str) -> Result<Option<GseRecord>> {
+    fn handle_dataset_state(&mut self, line: &str) -> Option<GseRecord> {
         if line.starts_with('^') {
             // Start of new section - finalize current dataset
             if line.strip_prefix("^DATASET = ").is_some() {
                 // New dataset - current one is lost (no storage for multiple datasets)
                 self.current_dataset = None;
-                Ok(None)
+                None
             } else {
                 // Other entity - finalize current dataset
                 self.current_dataset = None;
-                Ok(None)
+                None
             }
         } else if let Some(key_value) = line.strip_prefix('!') {
             self.parse_dataset_metadata(key_value)
         } else {
-            Ok(None)
+            None
         }
     }
 
     /// Handle lines when in subset state
-    fn handle_subset_state(&mut self, line: &str) -> Result<Option<GseRecord>> {
+    fn handle_subset_state(&mut self, line: &str) -> Option<GseRecord> {
         if line.starts_with('^') {
             // Start of new section - add completed subset to dataset
             if let Some(subset) = self.current_subset.take() {
@@ -290,12 +289,12 @@ impl<R: BufRead> SoftReader<R> {
                 self.start_subset(line.strip_prefix("^SUBSET = ").unwrap().trim())
             } else {
                 // Other entity - return None for now
-                Ok(None)
+                None
             }
         } else if let Some(key_value) = line.strip_prefix('!') {
             self.parse_subset_metadata(key_value)
         } else {
-            Ok(None)
+            None
         }
     }
 
@@ -322,7 +321,7 @@ impl<R: BufRead> SoftReader<R> {
             } else if line.starts_with('#') {
                 // Hash line provides column description
                 if let Some((col_name, desc)) =
-                    line.strip_prefix('#').and_then(|l| l.split_once("="))
+                    line.strip_prefix('#').and_then(|l| l.split_once('='))
                 {
                     let col_name = col_name.trim();
                     let desc = desc.trim();
@@ -372,7 +371,7 @@ impl<R: BufRead> SoftReader<R> {
             } else if line.starts_with('#') {
                 // Hash line provides column description
                 if let Some((col_name, desc)) =
-                    line.strip_prefix('#').and_then(|l| l.split_once("="))
+                    line.strip_prefix('#').and_then(|l| l.split_once('='))
                 {
                     let col_name = col_name.trim();
                     let desc = desc.trim();
@@ -430,7 +429,7 @@ impl<R: BufRead> SoftReader<R> {
             } else if line.starts_with('#') {
                 // Hash line provides column description
                 if let Some((col_name, desc)) =
-                    line.strip_prefix('#').and_then(|l| l.split_once("="))
+                    line.strip_prefix('#').and_then(|l| l.split_once('='))
                 {
                     let col_name = col_name.trim();
                     let desc = desc.trim();
@@ -476,7 +475,7 @@ impl<R: BufRead> SoftReader<R> {
     }
 
     /// Start parsing a new platform
-    fn start_platform(&mut self, accession: &str) -> Result<Option<GseRecord>> {
+    fn start_platform(&mut self, accession: &str) -> Option<GseRecord> {
         self.state = ParseState::InPlatform;
         self.current_platform = Some(GplRecord {
             local_id: accession.to_string(),
@@ -494,11 +493,11 @@ impl<R: BufRead> SoftReader<R> {
             metadata: HashMap::new(),
             annotation_table: None,
         });
-        Ok(None)
+        None
     }
 
     /// Start parsing a new sample
-    fn start_sample(&mut self, accession: &str) -> Result<Option<GseRecord>> {
+    fn start_sample(&mut self, accession: &str) -> Option<GseRecord> {
         self.state = ParseState::InSample;
         self.current_sample = Some(GsmRecord {
             local_id: accession.to_string(),
@@ -516,11 +515,11 @@ impl<R: BufRead> SoftReader<R> {
             metadata: HashMap::new(),
             data_table: None,
         });
-        Ok(None)
+        None
     }
 
     /// Start parsing a new dataset
-    fn start_dataset(&mut self, accession: &str) -> Result<Option<GseRecord>> {
+    fn start_dataset(&mut self, accession: &str) -> Option<GseRecord> {
         self.state = ParseState::InDataset;
         self.current_dataset = Some(GdsRecord {
             geo_accession: accession.to_string(),
@@ -536,11 +535,11 @@ impl<R: BufRead> SoftReader<R> {
             column_descs: HashMap::new(),
             data_table: None,
         });
-        Ok(None)
+        None
     }
 
     /// Start parsing a new subset
-    fn start_subset(&mut self, accession: &str) -> Result<Option<GseRecord>> {
+    fn start_subset(&mut self, accession: &str) -> Option<GseRecord> {
         self.state = ParseState::InSubset;
         self.current_subset = Some(GdsSubset {
             local_id: accession.to_string(),
@@ -548,11 +547,11 @@ impl<R: BufRead> SoftReader<R> {
             sample_ids: Vec::new(),
             subset_type: String::new(),
         });
-        Ok(None)
+        None
     }
 
     /// Parse series metadata
-    fn parse_series_metadata(&mut self, key_value: &str) -> Result<Option<GseRecord>> {
+    fn parse_series_metadata(&mut self, key_value: &str) -> Option<GseRecord> {
         if let Some((key, value)) = key_value.split_once(" = ") {
             let key = key.trim();
             let value = value.trim();
@@ -583,11 +582,11 @@ impl<R: BufRead> SoftReader<R> {
                 }
             }
         }
-        Ok(None)
+        None
     }
 
     /// Parse platform metadata
-    fn parse_platform_metadata(&mut self, key_value: &str) -> Result<Option<GseRecord>> {
+    fn parse_platform_metadata(&mut self, key_value: &str) -> Option<GseRecord> {
         if let Some((key, value)) = key_value.split_once(" = ") {
             let key = key.trim();
             let value = value.trim();
@@ -607,7 +606,7 @@ impl<R: BufRead> SoftReader<R> {
                 }
             }
         }
-        Ok(None)
+        None
     }
 
     /// Parse sample metadata
@@ -647,9 +646,10 @@ impl<R: BufRead> SoftReader<R> {
                                         )));
                                     }
                                     // Update channel count if needed
-                                    let new_count = (channel_num + 1) as u8;
-                                    if new_count > sample.channel_count {
-                                        sample.channel_count = new_count;
+                                    if let Ok(new_count) = u8::try_from(channel_num + 1) {
+                                        if new_count > sample.channel_count {
+                                            sample.channel_count = new_count;
+                                        }
                                     }
                                     // Ensure we have enough channel slots
                                     while sample.characteristics.len() <= channel_num {
@@ -676,7 +676,7 @@ impl<R: BufRead> SoftReader<R> {
     }
 
     /// Parse dataset metadata
-    fn parse_dataset_metadata(&mut self, key_value: &str) -> Result<Option<GseRecord>> {
+    fn parse_dataset_metadata(&mut self, key_value: &str) -> Option<GseRecord> {
         if let Some((key, value)) = key_value.split_once(" = ") {
             let key = key.trim();
             let value = value.trim();
@@ -715,11 +715,11 @@ impl<R: BufRead> SoftReader<R> {
                 }
             }
         }
-        Ok(None)
+        None
     }
 
     /// Parse subset metadata
-    fn parse_subset_metadata(&mut self, key_value: &str) -> Result<Option<GseRecord>> {
+    fn parse_subset_metadata(&mut self, key_value: &str) -> Option<GseRecord> {
         if let Some((key, value)) = key_value.split_once(" = ") {
             let key = key.trim();
             let value = value.trim();
@@ -738,7 +738,7 @@ impl<R: BufRead> SoftReader<R> {
                 }
             }
         }
-        Ok(None)
+        None
     }
 }
 
@@ -1096,6 +1096,7 @@ impl GsmRecord {
     /// # Errors
     ///
     /// Returns an error if the conversion fails.
+    #[allow(clippy::too_many_lines)]
     pub fn to_record_batch(&self) -> Result<RecordBatch> {
         let Some(table) = &self.data_table else {
             return Err(Error::InvalidFormat("Sample has no data table".to_string()));

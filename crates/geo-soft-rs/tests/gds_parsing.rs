@@ -1,7 +1,5 @@
 //! Test GDS entity parsing
 
-use geo_soft_rs::Result;
-
 #[test]
 fn test_gds_parsing() -> geo_soft_rs::Result<()> {
     let soft_content = r#"^DATASET = GDS329
