@@ -1,10 +1,56 @@
 //! SOFT format parser
 
-use std::{collections::HashMap, io::BufRead, path::Path};
+use std::{collections::HashMap, io::BufRead, path::Path, sync::Arc};
 
-use arrow::record_batch::RecordBatch;
+use arrow::{
+    array::{ArrayRef, Float64Array, StringArray},
+    datatypes::{DataType, Field, Schema},
+    record_batch::RecordBatch,
+};
 
 use crate::{Error, Result};
+
+// Constants for column indices
+const ID_REF_COL: usize = 0;
+const IDENTIFIER_COL: usize = 1;
+const DUAL_VALUE_COL: usize = 2;
+const DUAL_CH1_COL: usize = 3;
+const DUAL_CH2_COL: usize = 4;
+
+/// Parse a nullable float64 value with null sentinel handling
+///
+/// # Arguments
+///
+/// * `s` - String to parse
+///
+/// # Returns
+///
+/// * `Ok(None)` - Arrow null for recognized null sentinels
+/// * `Ok(Some(f))` - Valid float value
+/// * `Err` - Non-null, non-parseable string (surface to caller)
+pub fn parse_f64_nullable(s: &str) -> Result<Option<f64>> {
+    let trimmed = s.trim();
+
+    // Check for null sentinels (case-insensitive)
+    if trimmed.is_empty()
+        || trimmed.eq_ignore_ascii_case("null")
+        || trimmed.eq_ignore_ascii_case("na")
+        || trimmed.eq_ignore_ascii_case("n/a")
+        || trimmed.eq_ignore_ascii_case("nan")
+        || trimmed.eq_ignore_ascii_case("none")
+    {
+        return Ok(None);
+    }
+
+    // Try to parse as float
+    match trimmed.parse::<f64>() {
+        Ok(value) => Ok(Some(value)),
+        Err(_) => Err(Error::InvalidFormat(format!(
+            "Invalid float value: '{}'",
+            s
+        ))),
+    }
+}
 
 /// Parser state for SOFT format
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -148,7 +194,7 @@ impl<R: BufRead> SoftReader<R> {
     fn handle_series_state(&mut self, line: &str) -> Result<Option<GseRecord>> {
         if line.starts_with('^') {
             // Start of new section - return current series
-            Ok(self.current_series.take())
+            return Ok(self.current_series.take());
         } else if let Some(key_value) = line.strip_prefix('!') {
             self.parse_series_metadata(key_value)
         } else {
@@ -943,6 +989,105 @@ impl GseRecord {
         // TODO: Implement Arrow conversion
         todo!("Implement Arrow conversion")
     }
+
+    /// Convert metadata to Arrow `RecordBatch` with attribute-value rows
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the conversion fails.
+    pub fn metadata_batch(&self) -> Result<RecordBatch> {
+        // Build schema: accession, key, value
+        let fields = vec![
+            Field::new("accession", DataType::Utf8, false),
+            Field::new("key", DataType::Utf8, false),
+            Field::new("value", DataType::Utf8, true),
+        ];
+        let schema = Schema::new(fields);
+
+        // Collect all metadata as rows (multi-value fields produce multiple rows)
+        let mut accessions: Vec<String> = Vec::new();
+        let mut keys: Vec<String> = Vec::new();
+        let mut values: Vec<String> = Vec::new();
+
+        // Add basic fields as metadata
+        accessions.push(self.local_id.clone());
+        keys.push("title".to_string());
+        values.push(self.title.clone());
+
+        if let Some(geo_accession) = &self.geo_accession {
+            accessions.push(self.local_id.clone());
+            keys.push("geo_accession".to_string());
+            values.push(geo_accession.clone());
+        }
+
+        accessions.push(self.local_id.clone());
+        keys.push("overall_design".to_string());
+        values.push(self.overall_design.clone());
+
+        // Add multi-value fields (each value gets its own row)
+        for summary in &self.summary {
+            accessions.push(self.local_id.clone());
+            keys.push("summary".to_string());
+            values.push(summary.clone());
+        }
+
+        for series_type in &self.series_type {
+            accessions.push(self.local_id.clone());
+            keys.push("series_type".to_string());
+            values.push(series_type.clone());
+        }
+
+        for sample_id in &self.sample_ids {
+            accessions.push(self.local_id.clone());
+            keys.push("sample_id".to_string());
+            values.push(sample_id.clone());
+        }
+
+        for contributor in &self.contributor {
+            accessions.push(self.local_id.clone());
+            keys.push("contributor".to_string());
+            values.push(contributor.clone());
+        }
+
+        for pubmed_id in &self.pubmed_id {
+            accessions.push(self.local_id.clone());
+            keys.push("pubmed_id".to_string());
+            values.push(pubmed_id.to_string());
+        }
+
+        // Add metadata HashMap entries (multi-value supported)
+        for (key, values_list) in &self.metadata {
+            for value in values_list {
+                accessions.push(self.local_id.clone());
+                keys.push(key.clone());
+                values.push(value.clone());
+            }
+        }
+
+        // Create Arrow arrays
+        let arrays: Vec<ArrayRef> = vec![
+            Arc::new(StringArray::from(accessions)),
+            Arc::new(StringArray::from(keys)),
+            Arc::new(StringArray::from(values)),
+        ];
+
+        // Add schema metadata (G1.2.5) before creating RecordBatch
+        let mut metadata = HashMap::new();
+        metadata.insert("geo_entity_type".to_string(), "series".to_string());
+        metadata.insert("geo_local_id".to_string(), self.local_id.clone());
+        if let Some(geo_accession) = &self.geo_accession {
+            metadata.insert("geo_accession".to_string(), geo_accession.clone());
+        }
+
+        // Create schema with metadata
+        let schema_with_metadata = schema.with_metadata(metadata);
+
+        // Create RecordBatch once with metadata
+        let batch =
+            RecordBatch::try_new(Arc::new(schema_with_metadata), arrays).map_err(Error::Arrow)?;
+
+        Ok(batch)
+    }
 }
 
 impl GsmRecord {
@@ -952,8 +1097,169 @@ impl GsmRecord {
     ///
     /// Returns an error if the conversion fails.
     pub fn to_record_batch(&self) -> Result<RecordBatch> {
-        // TODO: Implement Arrow conversion
-        todo!("Implement Arrow conversion")
+        let Some(table) = &self.data_table else {
+            return Err(Error::InvalidFormat("Sample has no data table".to_string()));
+        };
+
+        if table.rows.is_empty() {
+            return Err(Error::InvalidFormat(
+                "Sample data table has no rows".to_string(),
+            ));
+        }
+
+        // Get column names (skip the first two which are ID_REF and IDENTIFIER)
+        let value_columns: Vec<&str> = table
+            .columns
+            .iter()
+            .skip(2)
+            .map(|col| col.name.as_str())
+            .collect();
+
+        // Check if this is dual-channel (log ratio + ch1/ch2 values) or single-channel
+        // Dual-channel pattern: VALUE, CH1, CH2 (case-insensitive)
+        let is_dual_channel = value_columns.len() >= 3
+            && value_columns[0].to_ascii_uppercase().contains("VALUE")
+            && value_columns[1].to_ascii_uppercase().contains("CH1")
+            && value_columns[2].to_ascii_uppercase().contains("CH2");
+
+        // Build schema
+        let mut fields = vec![
+            Field::new("id_ref", DataType::Utf8, false),
+            Field::new("identifier", DataType::Utf8, true),
+        ];
+
+        if is_dual_channel {
+            fields.push(Field::new("value", DataType::Float64, true)); // log ratio
+            fields.push(Field::new("ch1_value", DataType::Float64, true));
+            fields.push(Field::new("ch2_value", DataType::Float64, true));
+        } else {
+            // Single channel - just one value column per sample
+            for col_name in &value_columns {
+                fields.push(Field::new(
+                    col_name.to_ascii_lowercase(),
+                    DataType::Float64,
+                    true,
+                ));
+            }
+        }
+
+        // Add auxiliary columns as Utf8 (caller can cast downstream)
+        for col in table.columns.iter().skip(
+            2 + if is_dual_channel {
+                3
+            } else {
+                value_columns.len()
+            },
+        ) {
+            fields.push(Field::new(
+                col.name.to_ascii_lowercase(),
+                DataType::Utf8,
+                true,
+            ));
+        }
+
+        let schema = Schema::new(fields);
+
+        // Build arrays
+        let mut id_refs: Vec<String> = Vec::new();
+        let mut identifiers: Vec<Option<String>> = Vec::new();
+        let mut value_arrays: Vec<Vec<Option<f64>>> = if is_dual_channel {
+            vec![Vec::new(), Vec::new(), Vec::new()] // value, ch1, ch2
+        } else {
+            vec![Vec::new(); value_columns.len()]
+        };
+        let mut auxiliary_arrays: Vec<Vec<String>> = Vec::new();
+
+        // Initialize auxiliary arrays
+        for _ in table.columns.iter().skip(
+            2 + if is_dual_channel {
+                3
+            } else {
+                value_columns.len()
+            },
+        ) {
+            auxiliary_arrays.push(Vec::new());
+        }
+
+        // Process rows
+        for row in &table.rows {
+            if row.len() < 2 {
+                continue;
+            }
+
+            id_refs.push(row[ID_REF_COL].clone());
+            identifiers.push(row.get(IDENTIFIER_COL).cloned());
+
+            if is_dual_channel {
+                // Parse value columns: log ratio, ch1, ch2
+                for (i, col_idx) in [DUAL_VALUE_COL, DUAL_CH1_COL, DUAL_CH2_COL]
+                    .iter()
+                    .enumerate()
+                {
+                    let value = row.get(*col_idx).cloned().unwrap_or_default();
+                    let parsed = parse_f64_nullable(&value)?;
+                    value_arrays[i].push(parsed);
+                }
+
+                // Handle auxiliary columns
+                for (i, aux_col_idx) in (DUAL_CH2_COL + 1..row.len()).enumerate() {
+                    if let Some(aux_array) = auxiliary_arrays.get_mut(i) {
+                        aux_array.push(row[aux_col_idx].clone());
+                    }
+                }
+            } else {
+                // Single channel - parse each value column
+                for (i, col_idx) in (2..row.len()).enumerate() {
+                    if i < value_arrays.len() {
+                        let value = row.get(col_idx).cloned().unwrap_or_default();
+                        let parsed = parse_f64_nullable(&value)?;
+                        value_arrays[i].push(parsed);
+                    } else {
+                        // Auxiliary columns - use safe index math
+                        let aux_index = i.saturating_sub(value_arrays.len());
+                        if let Some(aux_array) = auxiliary_arrays.get_mut(aux_index) {
+                            aux_array.push(row[col_idx].clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Create Arrow arrays
+        let mut arrays: Vec<ArrayRef> = vec![
+            Arc::new(StringArray::from(id_refs)),
+            Arc::new(StringArray::from(identifiers)),
+        ];
+
+        // Add value arrays
+        for values in value_arrays {
+            arrays.push(Arc::new(Float64Array::from(values)));
+        }
+
+        // Add auxiliary arrays
+        for aux_values in auxiliary_arrays {
+            arrays.push(Arc::new(StringArray::from(aux_values)));
+        }
+
+        // Add schema metadata (G1.2.5) before creating RecordBatch
+        let mut metadata = HashMap::new();
+        metadata.insert(
+            "geo_channel_count".to_string(),
+            self.channel_count.to_string(),
+        );
+        if let Some(geo_accession) = &self.geo_accession {
+            metadata.insert("geo_accession".to_string(), geo_accession.clone());
+        }
+        metadata.insert("geo_platform_id".to_string(), self.platform_id.clone());
+
+        // Create schema with metadata
+        let schema_with_metadata = schema.with_metadata(metadata);
+
+        // Create RecordBatch once with metadata
+        let batch =
+            RecordBatch::try_new(Arc::new(schema_with_metadata), arrays).map_err(Error::Arrow)?;
+
+        Ok(batch)
     }
 }
 
@@ -964,7 +1270,98 @@ impl GplRecord {
     ///
     /// Returns an error if the conversion fails.
     pub fn annotation_batch(&self) -> Result<RecordBatch> {
-        // TODO: Implement Arrow conversion
-        todo!("Implement Arrow conversion")
+        let Some(table) = &self.annotation_table else {
+            return Err(Error::InvalidFormat(
+                "Platform has no annotation table".to_string(),
+            ));
+        };
+
+        if table.rows.is_empty() {
+            return Err(Error::InvalidFormat(
+                "Platform annotation table has no rows".to_string(),
+            ));
+        }
+
+        // Standard platform headers mapping (per GEO spec to snake_case)
+        let standard_headers = HashMap::from([
+            ("ID", "id"),
+            ("ID_REF", "id_ref"),
+            ("IDENTIFIER", "identifier"),
+            ("SEQUENCE", "sequence"),
+            ("GB_ACC", "gb_acc"),
+            ("GENE_SYMBOL", "gene_symbol"),
+            ("ENTREZ_ID", "entrez_id"),
+            ("DESCRIPTION", "description"),
+            ("SPOT_ID", "spot_id"),
+            ("DEFINITION", "definition"),
+            ("ONTOLOGY", "ontology"),
+            ("SYNONYM", "synonym"),
+            ("GO_ID", "go_id"),
+            ("GO_TERM", "go_term"),
+            ("PROBE_ID", "probe_id"),
+            ("ACCESSION", "accession"),
+        ]);
+
+        // Build schema with standard headers and pass-through for non-standard
+        let mut fields = Vec::new();
+        let mut column_mappings: Vec<(String, String)> = Vec::new(); // (original, snake_case)
+
+        for col in &table.columns {
+            let snake_name = standard_headers.get(&col.name.as_str()).map_or_else(
+                || col.name.to_ascii_lowercase(),
+                std::string::ToString::to_string,
+            );
+
+            column_mappings.push((col.name.clone(), snake_name.clone()));
+
+            // Add field metadata if available
+            let mut field = Field::new(snake_name, DataType::Utf8, true);
+            if let Some(description) = self.column_descs.get(&col.name) {
+                let metadata = HashMap::from([("geo_col_desc".to_string(), description.clone())]);
+                field = field.with_metadata(metadata);
+            }
+            fields.push(field);
+        }
+
+        let schema = Schema::new(fields);
+
+        // Build arrays
+        let mut arrays: Vec<Vec<String>> = vec![Vec::new(); table.columns.len()];
+
+        // Process rows
+        for row in &table.rows {
+            for (i, cell) in row.iter().enumerate() {
+                if i < arrays.len() {
+                    arrays[i].push(cell.clone());
+                }
+            }
+        }
+
+        // Create Arrow arrays
+        let mut arrow_arrays: Vec<ArrayRef> = Vec::new();
+
+        for (i, (_original_name, _snake_name)) in column_mappings.iter().enumerate() {
+            if i < arrays.len() {
+                let array = Arc::new(StringArray::from(arrays[i].clone()));
+                arrow_arrays.push(array);
+            }
+        }
+
+        // Add schema metadata (G1.2.5) before creating RecordBatch
+        let mut metadata = HashMap::new();
+        metadata.insert("geo_entity_type".to_string(), "platform".to_string());
+        if let Some(geo_accession) = &self.geo_accession {
+            metadata.insert("geo_accession".to_string(), geo_accession.clone());
+        }
+        metadata.insert("geo_local_id".to_string(), self.local_id.clone());
+
+        // Create schema with metadata
+        let schema_with_metadata = schema.with_metadata(metadata);
+
+        // Create RecordBatch once with metadata
+        let batch = RecordBatch::try_new(Arc::new(schema_with_metadata), arrow_arrays)
+            .map_err(Error::Arrow)?;
+
+        Ok(batch)
     }
 }

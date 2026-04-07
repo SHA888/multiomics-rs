@@ -273,34 +273,34 @@ In any entity state:
              `_last_update_date`, `_row_count`, `_contact_*` → route to `metadata` HashMap,
              never return a parse error
 
-### [ ] G1.2 Arrow output
+### [x] G1.2 Arrow output
 
-- [ ] G1.2.1 `GsmRecord::to_record_batch() -> Result<RecordBatch>`
+- [x] G1.2.1 `GsmRecord::to_record_batch() -> Result<RecordBatch>`
   - single-channel: `id_ref (Utf8)`, `value (Float64, nullable)`
   - dual-channel: `id_ref (Utf8)`, `value (Float64, nullable)` (log ratio),
     `ch1_value (Float64, nullable)`, `ch2_value (Float64, nullable)`
   - auxiliary columns: `Utf8` (caller casts downstream)
   - one RecordBatch per GSM record
-- [ ] G1.2.2 `GplRecord::annotation_batch() -> Result<RecordBatch>`
+- [x] G1.2.2 `GplRecord::annotation_batch() -> Result<RecordBatch>`
   - columns: `id (Utf8)`, `sequence (Utf8)`, `gb_acc (Utf8)`,
     `gene_symbol (Utf8)`, `entrez_id (Utf8)`, `description (Utf8)`
   - standard platform headers (per GEO spec) map to snake_case; non-standard pass through as `Utf8`
   - all columns nullable
-- [ ] G1.2.3 `GseRecord::metadata_batch() -> Result<RecordBatch>`
+- [x] G1.2.3 `GseRecord::metadata_batch() -> Result<RecordBatch>`
   - columns: `accession (Utf8)`, `key (Utf8)`, `value (Utf8)`
   - one row per attribute value; multi-value fields produce multiple rows with same key
-- [ ] G1.2.4 Null sentinel set — centralized `parse_f64_nullable(s: &str) -> Result<Option<f64>>`:
+- [x] G1.2.4 Null sentinel set — centralized `parse_f64_nullable(s: &str) -> Result<Option<f64>>`:
   - `None` (Arrow null): `""`, `"null"`, `"Null"`, `"NULL"`, `"na"`, `"NA"`,
     `"n/a"`, `"N/A"`, `"nan"`, `"NaN"`, `"NAN"`, `"none"`, `"None"`, `"NONE"`
   - `Ok(Some(f))`: valid float string
   - `Err`: non-null, non-parseable string (surface to caller — do not silently null)
-- [ ] G1.2.5 Arrow schema metadata on all RecordBatches:
+- [x] G1.2.5 Arrow schema metadata on all RecordBatches:
   - `"geo_channel_count"` → `"1"` or `"2"` (GSM batches)
   - `"geo_accession"` → accession string where known
   - `"geo_platform_id"` → platform accession (GSM batches)
-- [ ] G1.2.6 `#` hash line content propagated into `ColumnDescriptor.description` and
+- [x] G1.2.6 `#` hash line content propagated into `ColumnDescriptor.description` and
             surfaced as Arrow field metadata (`"geo_col_desc"` key)
-- [ ] G1.2.7 `GdsRecord::to_record_batch() -> Result<RecordBatch>` (see G1.0.5)
+- [x] G1.2.7 `GdsRecord::to_record_batch() -> Result<RecordBatch>` (see G1.0.5)
 
 ### [ ] G1.3 `SoftReader` API
 
