@@ -31,7 +31,8 @@ const DUAL_CH2_COL: usize = 4;
 ///
 /// # Errors
 ///
-/// Returns an error if the string is not a valid float and is not a recognized null sentinel.
+/// Returns an error if the string is not a valid float and is not a recognized
+/// null sentinel.
 pub fn parse_f64_nullable(s: &str) -> Result<Option<f64>> {
     let trimmed = s.trim();
 
@@ -41,7 +42,8 @@ pub fn parse_f64_nullable(s: &str) -> Result<Option<f64>> {
         || trimmed.eq_ignore_ascii_case("na")
         || trimmed.eq_ignore_ascii_case("n/a")
         || trimmed.eq_ignore_ascii_case("nan")
-        || trimmed.eq_ignore_ascii_case("none") {
+        || trimmed.eq_ignore_ascii_case("none")
+    {
         return Ok(None);
     }
 
@@ -122,7 +124,8 @@ impl<R: BufRead> SoftReader<R> {
                         // No series and EOF reached - we're done
                         return None;
                     }
-                    // No series yet, continue parsing (implicit continue at end of loop)
+                    // No series yet, continue parsing (implicit continue at end
+                    // of loop)
                 }
                 Err(e) => return Some(Err(e)),
             }
