@@ -1,0 +1,28 @@
+^SERIES = GSETEST3
+!Series_title = Series with Download Attributes
+!Series_geo_accession = GSETEST3
+!Series_summary = Testing download attribute handling
+!Series_overall_design = Test design
+!Series_status = Public on Jan 01 2024
+!Series_submission_date = Jan 01 2024
+!Series_last_update_date = Feb 15 2024
+!Series_contact_name = John Doe
+!Series_contact_email = john@example.com
+!Series_contact_institute = Test Institute
+!Series_sample_id = GSMTEST9
+
+^SAMPLE = GSMTEST9
+!Sample_title = Sample with Download Attributes
+!Sample_geo_accession = GSMTEST9
+!Sample_platform_id = GPLTEST1
+!Sample_channel_count = 1
+!Sample_status = Public on Jan 01 2024
+!Sample_submission_date = Jan 01 2024
+!Sample_last_update_date = Feb 15 2024
+!Sample_contact_name = Jane Smith
+!Sample_contact_email = jane@example.com
+!Sample_contact_institute = Test Institute
+!Sample_table_begin
+ID_REF	VALUE
+probe1	1.0
+!Sample_table_end

@@ -1,0 +1,59 @@
+^PLATFORM = GPLTEST1
+!Platform_title = Test Platform
+!Platform_geo_accession = GPLTEST1
+!Platform_technology = in situ oligonucleotide
+!Platform_distribution = commercial
+!Platform_organism = Homo sapiens
+!Platform_manufacturer = Test Manufacturer
+!Platform_table_begin
+ID_REF	IDENTIFIER	Gene_Symbol
+#ID_REF = Probe identifier
+#IDENTIFIER = Gene identifier
+#Gene_Symbol = Gene symbol
+probe1	gene1	SYMBOL1
+probe2	gene2	SYMBOL2
+probe3	gene3	SYMBOL3
+!Platform_table_end
+
+^SAMPLE = GSMTEST1
+!Sample_title = Test Sample 1
+!Sample_geo_accession = GSMTEST1
+!Sample_platform_id = GPLTEST1
+!Sample_channel_count = 1
+!Sample_source_name_ch1 = Test Tissue 1
+!Sample_organism_ch1 = Homo sapiens
+!Sample_characteristics_ch1 = treatment: control
+!Sample_table_begin
+ID_REF	VALUE
+#ID_REF = Probe identifier
+#VALUE = Normalized signal
+probe1	1.5
+probe2	2.3
+probe3	0.8
+!Sample_table_end
+
+^SAMPLE = GSMTEST2
+!Sample_title = Test Sample 2
+!Sample_geo_accession = GSMTEST2
+!Sample_platform_id = GPLTEST1
+!Sample_channel_count = 1
+!Sample_source_name_ch1 = Test Tissue 2
+!Sample_organism_ch1 = Homo sapiens
+!Sample_characteristics_ch1 = treatment: treated
+!Sample_table_begin
+ID_REF	VALUE
+#ID_REF = Probe identifier
+#VALUE = Normalized signal
+probe1	2.1
+probe2	1.9
+probe3	1.4
+!Sample_table_end
+
+^SERIES = GSETEST1
+!Series_title = Test Series
+!Series_geo_accession = GSETEST1
+!Series_summary = A test series for unit testing
+!Series_overall_design = Two samples compared
+!Series_sample_id = GSMTEST1
+!Series_sample_id = GSMTEST2
+!Series_platform_id = GPLTEST1

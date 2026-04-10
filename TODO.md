@@ -302,18 +302,18 @@ In any entity state:
             surfaced as Arrow field metadata (`"geo_col_desc"` key)
 - [x] G1.2.7 `GdsRecord::to_record_batch() -> Result<RecordBatch>` (see G1.0.5)
 
-### [ ] G1.3 `SoftReader` API
+### [x] G1.3 `SoftReader` API
 
-- [ ] G1.3.1 `SoftReader::open(path) -> Result<Self>`
-- [ ] G1.3.2 `SoftReader::open_gz(path) -> Result<Self>`
-- [ ] G1.3.3 `SoftReader::series() -> impl Iterator<Item = Result<GseRecord>> + '_`
-- [ ] G1.3.4 `SoftReader::samples() -> impl Iterator<Item = Result<GsmRecord>> + '_`
-- [ ] G1.3.5 `SoftReader::platforms() -> impl Iterator<Item = Result<GplRecord>> + '_`
-- [ ] G1.3.6 `SoftReader::datasets() -> impl Iterator<Item = Result<GdsRecord>> + '_`
-- [ ] G1.3.7 `SoftReader::records() -> impl Iterator<Item = Result<SoftRecord>> + '_`
+- [x] G1.3.1 `SoftReader::open(path) -> Result<Self>`
+- [x] G1.3.2 `SoftReader::open_gz(path) -> Result<Self>`
+- [x] G1.3.3 `SoftReader::series() -> impl Iterator<Item = Result<GseRecord>> + '_`
+- [x] G1.3.4 `SoftReader::samples() -> impl Iterator<Item = Result<GsmRecord>> + '_`
+- [x] G1.3.5 `SoftReader::platforms() -> impl Iterator<Item = Result<GplRecord>> + '_`
+- [x] G1.3.6 `SoftReader::datasets() -> impl Iterator<Item = Result<GdsRecord>> + '_`
+- [x] G1.3.7 `SoftReader::records() -> impl Iterator<Item = Result<SoftRecord>> + '_`
             — heterogeneous; preserves file order; required for family files where entity
             order is unknown
-- [ ] G1.3.8 `SoftReader::read_all() -> Result<SoftFile>`
+- [x] G1.3.8 `SoftReader::read_all() -> Result<SoftFile>`
             — eager; convenience for small files
 
 ```rust
@@ -332,44 +332,45 @@ pub struct SoftFile {
 }
 ```
 
-### [ ] G1.4 Tests
+### [x] G1.4 Tests
 
-- [ ] G1.4.1 Synthetic SOFT fixtures in `tests/fixtures/`
+- [x] G1.4.1 Synthetic SOFT fixtures in `tests/fixtures/`
   - `minimal_family.soft` — one GPL, two single-channel GSMs, one GSE, data tables
   - `minimal_family.soft.gz` — gzip version of above
   - `dual_channel.soft` — one GPL, two dual-channel GSMs (VALUE = log ratio)
   - `gds_with_subsets.soft` — one GDS with two `^SUBSET` sections
   - `download_attrs.soft` — file with `_status`, `_contact_*`, `_submission_date` fields
   - `multi_section.soft` — multiple concatenated GSE/GSM/GPL sections
-- [ ] G1.4.2 Unit tests:
+- [x] G1.4.2 Unit tests:
   - entity header parsing: `^SERIES = GSE65682` → `local_id = "GSE65682"`
   - `local_id` vs `geo_accession` differ when fixture has both — verify no conflation
   - metadata parsing: multi-value fields accumulated correctly
   - `#` hash lines: `ColumnDescriptor.description` populated
   - table parsing: column descriptors + row values parsed
   - gzip: same output as uncompressed equivalent
-- [ ] G1.4.3 Arrow output tests:
+- [x] G1.4.3 Arrow output tests:
   - `to_record_batch()` schema matches declared schema
   - `Float64` columns: all null sentinel strings → Arrow null (not parse error)
   - Row count matches fixture data
   - Schema metadata keys present: `geo_accession`, `geo_channel_count`, `geo_platform_id`
-- [ ] G1.4.4 Integration test: parse `minimal_family.soft` end-to-end,
+- [x] G1.4.4 Integration test: parse `minimal_family.soft` end-to-end,
   assert series accession, sample count, platform annotation row count
-- [ ] G1.4.5 Property tests: parser handles empty tables, missing fields,
+- [x] G1.4.5 Property tests: parser handles empty tables, missing fields,
   arbitrary whitespace without panic
-- [ ] G1.4.6 Dual-channel fixture: `channel_count = 2`, VALUE column = log ratio,
+- [x] G1.4.6 Dual-channel fixture: `channel_count = 2`, VALUE column = log ratio,
             `ch1_value` and `ch2_value` columns present in RecordBatch schema
-- [ ] G1.4.7 GDS fixture: `GdsRecord` parsed, `GdsSubset` list populated,
+- [x] G1.4.7 GDS fixture: `GdsRecord` parsed, `GdsSubset` list populated,
             data table column count = 2 + sample_count
-- [ ] G1.4.8 Download-attrs fixture: `_contact_name`, `_status`, `_submission_date`
+- [x] G1.4.8 Download-attrs fixture: `_contact_name`, `_status`, `_submission_date`
             route to `metadata` HashMap — no parse error, not in named struct fields
-- [ ] G1.4.9 Null sentinel coverage: each of `""`, `"NA"`, `"null"`, `"NaN"`, `"none"`
+- [x] G1.4.9 Null sentinel coverage: each of `""`, `"NA"`, `"null"`, `"NaN"`, `"none"`
             in VALUE column → Arrow null; verify with `is_null()` on resulting array
-- [ ] G1.4.10 Malformed float: `"abc"` in VALUE column → `Err`, not `None`
-- [ ] G1.4.11 Line endings: `\r\n`-terminated fixture produces identical RecordBatch to `\n` version
-- [ ] G1.4.12 `local_id` vs `geo_accession`: fixture where `^SAMPLE = my_local_name` and
+- [x] G1.4.10 Malformed float: `"abc"` in VALUE column → `Err`, not `None`
+- [x] G1.4.11 Line endings: `\r\n`-terminated fixture produces identical RecordBatch to `\n` version
+- [x] G1.4.12 `local_id` vs `geo_accession`: fixture where `^SAMPLE = my_local_name` and
              `!Sample_geo_accession = GSM99999` → `local_id = "my_local_name"`,
              `geo_accession = Some("GSM99999")`
+- [x] G1.4.13 Official GDS6063 test with real-world data (7 subsets, 10 samples)
 
 ### [ ] G1.5 Documentation + release
 

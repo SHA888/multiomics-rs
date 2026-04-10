@@ -101,9 +101,29 @@ impl<R: BufRead> SoftReader<R> {
         }
     }
 
-    /// Iterate over GSE records
+    /// Iterate over GSE (Series) records
     pub fn series(&mut self) -> impl Iterator<Item = Result<GseRecord>> + '_ {
         std::iter::from_fn(move || self.next_series())
+    }
+
+    /// Iterate over GSM (Sample) records
+    pub fn samples(&mut self) -> impl Iterator<Item = Result<GsmRecord>> + '_ {
+        std::iter::from_fn(move || self.next_sample())
+    }
+
+    /// Iterate over GPL (Platform) records
+    pub fn platforms(&mut self) -> impl Iterator<Item = Result<GplRecord>> + '_ {
+        std::iter::from_fn(move || self.next_platform())
+    }
+
+    /// Iterate over GDS (Dataset) records
+    pub fn datasets(&mut self) -> impl Iterator<Item = Result<GdsRecord>> + '_ {
+        std::iter::from_fn(move || self.next_dataset())
+    }
+
+    /// Iterate over all records in file order (heterogeneous)
+    pub fn records(&mut self) -> impl Iterator<Item = Result<SoftRecord>> + '_ {
+        std::iter::from_fn(move || self.next_record())
     }
 
     /// Get the next GSE record
@@ -117,22 +137,542 @@ impl<R: BufRead> SoftReader<R> {
             match self.parse_next_line() {
                 Ok(Some(record)) => return Some(Ok(record)),
                 Ok(None) => {
-                    // Check if we have a pending series
-                    if self.current_series.is_some() {
+                    // Only emit when EOF is reached - series completion is handled
+                    // by handle_series_state when it sees the next ^ line
+                    if self.eof_reached && self.current_series.is_some() {
                         return self.current_series.take().map(Ok);
                     } else if self.eof_reached {
                         // No series and EOF reached - we're done
                         return None;
                     }
-                    // No series yet, continue parsing (implicit continue at end
-                    // of loop)
+                    // Continue parsing - don't emit partial series
                 }
                 Err(e) => return Some(Err(e)),
             }
         }
     }
 
-    /// Parse the next line from the input
+    /// Get the next GSM record
+    pub fn next_sample(&mut self) -> Option<Result<GsmRecord>> {
+        if self.eof_reached && self.current_sample.is_none() {
+            return None;
+        }
+
+        loop {
+            match self.parse_next_line_for_sample() {
+                Ok(Some(record)) => return Some(Ok(record)),
+                Ok(None) => {
+                    if self.eof_reached && self.current_sample.is_some() {
+                        // Return pending sample at EOF
+                        return self.current_sample.take().map(Ok);
+                    } else if self.eof_reached {
+                        return None;
+                    }
+                    // Otherwise continue parsing - don't return sample yet
+                }
+                Err(e) => return Some(Err(e)),
+            }
+        }
+    }
+
+    /// Get the next GPL record
+    pub fn next_platform(&mut self) -> Option<Result<GplRecord>> {
+        if self.eof_reached && self.current_platform.is_none() {
+            return None;
+        }
+
+        loop {
+            match self.parse_next_line_for_platform() {
+                Ok(Some(record)) => return Some(Ok(record)),
+                Ok(None) => {
+                    if self.eof_reached && self.current_platform.is_some() {
+                        return self.current_platform.take().map(Ok);
+                    } else if self.eof_reached {
+                        return None;
+                    }
+                }
+                Err(e) => return Some(Err(e)),
+            }
+        }
+    }
+
+    /// Get the next GDS record
+    pub fn next_dataset(&mut self) -> Option<Result<GdsRecord>> {
+        if self.eof_reached && self.current_dataset.is_none() {
+            return None;
+        }
+
+        loop {
+            match self.parse_next_line_for_dataset() {
+                Ok(Some(record)) => return Some(Ok(record)),
+                Ok(None) => {
+                    if self.eof_reached && self.current_dataset.is_some() {
+                        return self.current_dataset.take().map(Ok);
+                    } else if self.eof_reached {
+                        return None;
+                    }
+                }
+                Err(e) => return Some(Err(e)),
+            }
+        }
+    }
+
+    /// Get the next record of any type (heterogeneous)
+    pub fn next_record(&mut self) -> Option<Result<SoftRecord>> {
+        if self.eof_reached {
+            // Check for any pending records in priority order
+            if let Some(series) = self.current_series.take() {
+                return Some(Ok(SoftRecord::Series(series)));
+            }
+            if let Some(sample) = self.current_sample.take() {
+                return Some(Ok(SoftRecord::Sample(sample)));
+            }
+            if let Some(platform) = self.current_platform.take() {
+                return Some(Ok(SoftRecord::Platform(platform)));
+            }
+            if let Some(dataset) = self.current_dataset.take() {
+                return Some(Ok(SoftRecord::Dataset(dataset)));
+            }
+            return None;
+        }
+
+        loop {
+            match self.parse_next_line_for_record() {
+                Ok(Some(record)) => return Some(Ok(record)),
+                Ok(None) => {
+                    if self.eof_reached {
+                        // Check for any pending records in priority order
+                        if let Some(series) = self.current_series.take() {
+                            return Some(Ok(SoftRecord::Series(series)));
+                        }
+                        if let Some(sample) = self.current_sample.take() {
+                            return Some(Ok(SoftRecord::Sample(sample)));
+                        }
+                        if let Some(platform) = self.current_platform.take() {
+                            return Some(Ok(SoftRecord::Platform(platform)));
+                        }
+                        if let Some(dataset) = self.current_dataset.take() {
+                            return Some(Ok(SoftRecord::Dataset(dataset)));
+                        }
+                        return None;
+                    }
+                }
+                Err(e) => return Some(Err(e)),
+            }
+        }
+    }
+
+    /// Parse the next line looking for a sample record
+    fn parse_next_line_for_sample(&mut self) -> Result<Option<GsmRecord>> {
+        let mut line = String::new();
+        let bytes_read = self.reader.read_line(&mut line)?;
+
+        if bytes_read == 0 {
+            self.eof_reached = true;
+            return Ok(self.current_sample.take());
+        }
+
+        self.line_number += 1;
+
+        // Strip UTF-8 BOM on first line
+        let line = if !self.bom_stripped && line.starts_with('\u{FEFF}') {
+            self.bom_stripped = true;
+            &line[3..]
+        } else {
+            line.as_str()
+        };
+
+        // Normalize line endings and trim whitespace
+        let line = line.trim_end_matches(['\r', '\n']).trim();
+
+        // Skip blank lines silently
+        if line.is_empty() {
+            return Ok(None);
+        }
+
+        // Handle different line types based on state
+        match self.state {
+            ParseState::Idle => {
+                if let Some(accession) = line.strip_prefix("^SAMPLE = ") {
+                    self.start_sample(accession.trim());
+                } else if line.starts_with("^PLATFORM = ")
+                    || line.starts_with("^SERIES = ")
+                    || line.starts_with("^DATASET = ")
+                {
+                    // Other entity types - skip but track state change
+                    self.handle_entity_start(line);
+                }
+                Ok(None)
+            }
+            ParseState::InSample => {
+                if let Some(record) = self.handle_sample_state(line)? {
+                    // If transitioned to Idle (cross-entity), start new entity before returning
+                    if self.state == ParseState::Idle {
+                        self.handle_entity_start(line);
+                    }
+                    return Ok(Some(record));
+                }
+                Ok(None)
+            }
+            ParseState::InSampleTable => self.handle_sample_table_state(line).map(|_| None),
+            _ => {
+                // Not in sample-related state, continue parsing
+                self.handle_non_sample_state(line)?;
+                Ok(None)
+            }
+        }
+    }
+
+    /// Handle entity start when not in sample mode
+    fn handle_entity_start(&mut self, line: &str) {
+        if let Some(accession) = line.strip_prefix("^PLATFORM = ") {
+            self.state = ParseState::InPlatform;
+            self.current_platform = Some(GplRecord {
+                local_id: accession.to_string(),
+                geo_accession: None,
+                title: String::new(),
+                technology: String::new(),
+                distribution: String::new(),
+                organism: Vec::new(),
+                manufacturer: String::new(),
+                manufacture_protocol: Vec::new(),
+                description: Vec::new(),
+                contributor: Vec::new(),
+                pubmed_id: Vec::new(),
+                column_descs: HashMap::new(),
+                metadata: HashMap::new(),
+                annotation_table: None,
+            });
+        } else if let Some(accession) = line.strip_prefix("^SAMPLE = ") {
+            self.state = ParseState::InSample;
+            self.current_sample = Some(GsmRecord {
+                local_id: accession.to_string(),
+                geo_accession: None,
+                title: String::new(),
+                platform_id: String::new(),
+                channel_count: 1,
+                source_name: Vec::new(),
+                organism: Vec::new(),
+                characteristics: Vec::new(),
+                molecule: Vec::new(),
+                label: Vec::new(),
+                data_processing: Vec::new(),
+                description: Vec::new(),
+                metadata: HashMap::new(),
+                data_table: None,
+            });
+        } else if let Some(accession) = line.strip_prefix("^SERIES = ") {
+            self.state = ParseState::InSeries;
+            self.current_series = Some(GseRecord {
+                local_id: accession.to_string(),
+                geo_accession: None,
+                title: String::new(),
+                summary: Vec::new(),
+                overall_design: String::new(),
+                series_type: Vec::new(),
+                sample_ids: Vec::new(),
+                contributor: Vec::new(),
+                pubmed_id: Vec::new(),
+                metadata: HashMap::new(),
+            });
+        } else if let Some(accession) = line.strip_prefix("^DATASET = ") {
+            self.state = ParseState::InDataset;
+            self.current_dataset = Some(GdsRecord {
+                geo_accession: accession.to_string(),
+                title: String::new(),
+                description: String::new(),
+                platform: String::new(),
+                sample_organism: String::new(),
+                sample_type: String::new(),
+                feature_count: 0,
+                sample_count: 0,
+                subsets: Vec::new(),
+                metadata: HashMap::new(),
+                column_descs: HashMap::new(),
+                data_table: None,
+            });
+        }
+    }
+
+    /// Handle non-sample states (track but don't return)
+    fn handle_non_sample_state(&mut self, line: &str) -> Result<()> {
+        // Handle entity transitions first
+        if line.starts_with('^') {
+            self.handle_entity_start(line);
+            return Ok(());
+        }
+
+        match self.state {
+            ParseState::InPlatform => {
+                if let Some(key_value) = line.strip_prefix('!') {
+                    let _ = self.parse_platform_metadata(key_value);
+                }
+            }
+            ParseState::InPlatformTable => {
+                let _ = self.handle_platform_table_state(line)?;
+            }
+            ParseState::InSeries => {
+                if let Some(key_value) = line.strip_prefix('!') {
+                    let _ = self.parse_series_metadata(key_value);
+                }
+            }
+            ParseState::InDataset => {
+                if let Some(key_value) = line.strip_prefix('!') {
+                    let _ = self.parse_dataset_metadata(key_value);
+                }
+            }
+            ParseState::InDatasetTable => {
+                let _ = self.handle_dataset_table_state(line)?;
+            }
+            ParseState::InSubset => {
+                let _ = self.handle_subset_state(line);
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// Parse the next line looking for a platform record
+    fn parse_next_line_for_platform(&mut self) -> Result<Option<GplRecord>> {
+        let mut line = String::new();
+        let bytes_read = self.reader.read_line(&mut line)?;
+
+        if bytes_read == 0 {
+            self.eof_reached = true;
+            return Ok(self.current_platform.take());
+        }
+
+        self.line_number += 1;
+
+        // Strip UTF-8 BOM on first line
+        let line = if !self.bom_stripped && line.starts_with('\u{FEFF}') {
+            self.bom_stripped = true;
+            &line[3..]
+        } else {
+            line.as_str()
+        };
+
+        // Normalize line endings and trim whitespace
+        let line = line.trim_end_matches(['\r', '\n']).trim();
+
+        // Skip blank lines silently
+        if line.is_empty() {
+            return Ok(None);
+        }
+
+        // Handle different line types based on state
+        match self.state {
+            ParseState::Idle => {
+                if let Some(accession) = line.strip_prefix("^PLATFORM = ") {
+                    self.start_platform(accession.trim());
+                } else if line.starts_with("^SERIES = ")
+                    || line.starts_with("^SAMPLE = ")
+                    || line.starts_with("^DATASET = ")
+                    || line.starts_with("^SUBSET = ")
+                {
+                    // Other entity types - track state change
+                    self.handle_entity_start(line);
+                }
+                Ok(None)
+            }
+            ParseState::InPlatform => {
+                if let Some(record) = self.handle_platform_state(line) {
+                    // If transitioned to Idle (cross-entity), start new entity before returning
+                    if self.state == ParseState::Idle {
+                        self.handle_entity_start(line);
+                    }
+                    return Ok(Some(record));
+                }
+                Ok(None)
+            }
+            ParseState::InPlatformTable => self.handle_platform_table_state(line).map(|_| None),
+            _ => {
+                // Not in platform-related state, track state changes
+                self.handle_entity_start(line);
+                Ok(None)
+            }
+        }
+    }
+
+    /// Parse the next line looking for a dataset record
+    fn parse_next_line_for_dataset(&mut self) -> Result<Option<GdsRecord>> {
+        let mut line = String::new();
+        let bytes_read = self.reader.read_line(&mut line)?;
+
+        if bytes_read == 0 {
+            self.eof_reached = true;
+            return Ok(self.current_dataset.take());
+        }
+
+        self.line_number += 1;
+
+        // Strip UTF-8 BOM on first line
+        let line = if !self.bom_stripped && line.starts_with('\u{FEFF}') {
+            self.bom_stripped = true;
+            &line[3..]
+        } else {
+            line.as_str()
+        };
+
+        // Normalize line endings and trim whitespace
+        let line = line.trim_end_matches(['\r', '\n']).trim();
+
+        // Skip blank lines silently
+        if line.is_empty() {
+            return Ok(None);
+        }
+
+        // Handle different line types based on state
+        match self.state {
+            ParseState::Idle => {
+                if let Some(accession) = line.strip_prefix("^DATASET = ") {
+                    self.start_dataset(accession.trim());
+                }
+                Ok(None)
+            }
+            ParseState::InDataset => {
+                if let Some(record) = self.handle_dataset_state(line) {
+                    // If transitioned to Idle (cross-entity), start new entity before returning
+                    if self.state == ParseState::Idle {
+                        self.handle_entity_start(line);
+                    }
+                    return Ok(Some(record));
+                }
+                Ok(None)
+            }
+            ParseState::InDatasetTable => self.handle_dataset_table_state(line).map(|_| None),
+            ParseState::InSubset => {
+                self.handle_subset_state(line);
+                Ok(None)
+            }
+            _ => {
+                // Not in dataset-related state, track state changes
+                self.handle_entity_start(line);
+                Ok(None)
+            }
+        }
+    }
+
+    /// Parse the next line looking for any record type (heterogeneous)
+    fn parse_next_line_for_record(&mut self) -> Result<Option<SoftRecord>> {
+        let mut line = String::new();
+        let bytes_read = self.reader.read_line(&mut line)?;
+
+        if bytes_read == 0 {
+            // End of file - set flag and return None (pending records handled by caller)
+            self.eof_reached = true;
+            return Ok(None);
+        }
+
+        self.line_number += 1;
+
+        // Strip UTF-8 BOM on first line
+        let line = if !self.bom_stripped && line.starts_with('\u{FEFF}') {
+            self.bom_stripped = true;
+            &line[3..]
+        } else {
+            line.as_str()
+        };
+
+        // Normalize line endings and trim whitespace
+        let line = line.trim_end_matches(['\r', '\n']).trim();
+
+        // Skip blank lines silently
+        if line.is_empty() {
+            return Ok(None);
+        }
+
+        // Handle different line types based on state
+        match self.state {
+            ParseState::Idle => Ok(self.handle_idle_state(line)),
+            ParseState::InSeries => {
+                if let Some(record) = self.handle_series_state(line) {
+                    return Ok(Some(SoftRecord::Series(record)));
+                }
+                Ok(None)
+            }
+            ParseState::InPlatform => {
+                if let Some(record) = self.handle_platform_state(line) {
+                    // If state is now Idle (cross-entity transition), re-process line
+                    if self.state == ParseState::Idle {
+                        if let Some(_next_record) = self.handle_idle_state(line) {
+                            // Store the next record to emit after this one
+                            // For now, emit platform and defer the rest to next
+                            // iteration
+                            // by NOT returning here - let the loop continue
+                            // Actually, we can't easily emit two records at
+                            // once So we'll emit
+                            // platform now and the next line will trigger the
+                            // new entity
+                            // But we need to ensure the entity is started!
+                            // Let me think... Actually handle_idle_state should
+                            // start it
+                            // So just return the platform and continue
+                        }
+                    }
+                    return Ok(Some(SoftRecord::Platform(record)));
+                }
+                Ok(None)
+            }
+            ParseState::InSample => {
+                if let Some(record) = self.handle_sample_state(line)? {
+                    if self.state == ParseState::Idle {
+                        let _ = self.handle_idle_state(line);
+                    }
+                    return Ok(Some(SoftRecord::Sample(record)));
+                }
+                Ok(None)
+            }
+            ParseState::InDataset => {
+                if let Some(record) = self.handle_dataset_state(line) {
+                    if self.state == ParseState::Idle {
+                        let _ = self.handle_idle_state(line);
+                    }
+                    return Ok(Some(SoftRecord::Dataset(record)));
+                }
+                Ok(None)
+            }
+            ParseState::InSubset => {
+                // Subsets are part of datasets, don't emit separately
+                let _ = self.handle_subset_state(line);
+                Ok(None)
+            }
+            ParseState::InPlatformTable => {
+                let _ = self.handle_platform_table_state(line)?;
+                Ok(None)
+            }
+            ParseState::InSampleTable => {
+                let _ = self.handle_sample_table_state(line)?;
+                Ok(None)
+            }
+            ParseState::InDatasetTable => {
+                let _ = self.handle_dataset_table_state(line)?;
+                Ok(None)
+            }
+        }
+    }
+
+    /// Read all records eagerly into a `SoftFile`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any record cannot be parsed.
+    pub fn read_all(&mut self) -> Result<SoftFile> {
+        let mut file = SoftFile::default();
+
+        for record in self.records() {
+            match record? {
+                SoftRecord::Platform(p) => file.platforms.push(p),
+                SoftRecord::Sample(s) => file.samples.push(s),
+                SoftRecord::Series(s) => file.series.push(s),
+                SoftRecord::Dataset(d) => file.datasets.push(d),
+            }
+        }
+
+        Ok(file)
+    }
+
+    /// Parse the next line from the input (for series)
     fn parse_next_line(&mut self) -> Result<Option<GseRecord>> {
         let mut line = String::new();
         let bytes_read = self.reader.read_line(&mut line)?;
@@ -162,31 +702,103 @@ impl<R: BufRead> SoftReader<R> {
         }
 
         // Handle different line types based on state
+        // Note: This function only returns GseRecord; handle_idle_state may return
+        // a flushed record from a previous section, which we must propagate
         match self.state {
-            ParseState::Idle => Ok(self.handle_idle_state(line)),
+            ParseState::Idle => {
+                // handle_idle_state returns a flushed record when new entity follows pending
+                // record
+                if let Some(record) = self.handle_idle_state(line) {
+                    // Extract GseRecord from SoftRecord if it is one
+                    if let SoftRecord::Series(gse) = record {
+                        return Ok(Some(gse));
+                    }
+                    // Other record types are not returned by this function
+                }
+                Ok(None)
+            }
             ParseState::InSeries => Ok(self.handle_series_state(line)),
-            ParseState::InPlatform => Ok(self.handle_platform_state(line)),
-            ParseState::InSample => self.handle_sample_state(line),
-            ParseState::InDataset => Ok(self.handle_dataset_state(line)),
-            ParseState::InSubset => Ok(self.handle_subset_state(line)),
-            ParseState::InPlatformTable => self.handle_platform_table_state(line),
-            ParseState::InSampleTable => self.handle_sample_table_state(line),
-            ParseState::InDatasetTable => self.handle_dataset_table_state(line),
+            ParseState::InPlatform => {
+                let _ = self.handle_platform_state(line);
+                // If transitioned to Idle (cross-entity), process the line in Idle state
+                if self.state == ParseState::Idle {
+                    if let Some(record) = self.handle_idle_state(line) {
+                        if let SoftRecord::Series(gse) = record {
+                            return Ok(Some(gse));
+                        }
+                    }
+                }
+                Ok(None)
+            }
+            ParseState::InSample => {
+                let _ = self.handle_sample_state(line);
+                // If transitioned to Idle (cross-entity), process the line in Idle state
+                if self.state == ParseState::Idle {
+                    if let Some(record) = self.handle_idle_state(line) {
+                        if let SoftRecord::Series(gse) = record {
+                            return Ok(Some(gse));
+                        }
+                    }
+                }
+                Ok(None)
+            }
+            ParseState::InDataset => {
+                let _ = self.handle_dataset_state(line);
+                // If transitioned to Idle (cross-entity), process the line in Idle state
+                if self.state == ParseState::Idle {
+                    if let Some(record) = self.handle_idle_state(line) {
+                        if let SoftRecord::Series(gse) = record {
+                            return Ok(Some(gse));
+                        }
+                    }
+                }
+                Ok(None)
+            }
+            ParseState::InSubset => {
+                self.handle_subset_state(line);
+                Ok(None)
+            }
+            ParseState::InPlatformTable => self.handle_platform_table_state(line).map(|_| None),
+            ParseState::InSampleTable => self.handle_sample_table_state(line).map(|_| None),
+            ParseState::InDatasetTable => self.handle_dataset_table_state(line).map(|_| None),
         }
     }
 
-    /// Handle lines when in idle state
-    fn handle_idle_state(&mut self, line: &str) -> Option<GseRecord> {
+    /// Handle lines when in idle state (returns SoftRecord for heterogeneous
+    /// iterator)
+    fn handle_idle_state(&mut self, line: &str) -> Option<SoftRecord> {
         if let Some(accession) = line.strip_prefix("^SERIES = ") {
-            self.start_series(accession.trim())
+            // If we have a pending record from a previous section, emit it first
+            if let Some(series) = self.current_series.take() {
+                self.start_series(accession.trim());
+                return Some(SoftRecord::Series(series));
+            }
+            self.start_series(accession.trim());
+            None
         } else if let Some(accession) = line.strip_prefix("^PLATFORM = ") {
-            self.start_platform(accession.trim())
+            if let Some(platform) = self.current_platform.take() {
+                self.start_platform(accession.trim());
+                return Some(SoftRecord::Platform(platform));
+            }
+            self.start_platform(accession.trim());
+            None
         } else if let Some(accession) = line.strip_prefix("^SAMPLE = ") {
-            self.start_sample(accession.trim())
+            if let Some(sample) = self.current_sample.take() {
+                self.start_sample(accession.trim());
+                return Some(SoftRecord::Sample(sample));
+            }
+            self.start_sample(accession.trim());
+            None
         } else if let Some(accession) = line.strip_prefix("^DATASET = ") {
-            self.start_dataset(accession.trim())
+            if let Some(dataset) = self.current_dataset.take() {
+                self.start_dataset(accession.trim());
+                return Some(SoftRecord::Dataset(dataset));
+            }
+            self.start_dataset(accession.trim());
+            None
         } else if let Some(accession) = line.strip_prefix("^SUBSET = ") {
-            self.start_subset(accession.trim())
+            self.start_subset(accession.trim());
+            None
         } else {
             None
         }
@@ -195,8 +807,11 @@ impl<R: BufRead> SoftReader<R> {
     /// Handle lines when in series state
     fn handle_series_state(&mut self, line: &str) -> Option<GseRecord> {
         if line.starts_with('^') {
-            // Start of new section - return current series
-            self.current_series.take()
+            // Start of new section - return current series and transition to new entity
+            let current = self.current_series.take();
+            self.state = ParseState::Idle;
+            self.handle_idle_state(line); // start new entity
+            current
         } else if let Some(key_value) = line.strip_prefix('!') {
             self.parse_series_metadata(key_value)
         } else {
@@ -205,25 +820,18 @@ impl<R: BufRead> SoftReader<R> {
     }
 
     /// Handle lines when in platform state
-    fn handle_platform_state(&mut self, line: &str) -> Option<GseRecord> {
+    fn handle_platform_state(&mut self, line: &str) -> Option<GplRecord> {
         if line.starts_with('^') {
-            // Start of new section - return current series if any
-            // Platform entity is consumed by series, not emitted directly
-            self.current_platform = None;
-
+            // Start of new section - return current platform if any
             if line.strip_prefix("^PLATFORM = ").is_some() {
-                // New platform - will be started by idle handler
-                self.state = ParseState::Idle;
-                self.current_series.take()
-            } else if line.strip_prefix("^SERIES = ").is_some() {
-                // New series - return current series if any
-                self.state = ParseState::Idle;
-                self.current_series.take()
-            } else if line.strip_prefix("^SAMPLE = ").is_some() {
-                // Sample start - continue in series context
-                None
+                // New platform - return current one and start new
+                let current = self.current_platform.take();
+                self.start_platform(line.strip_prefix("^PLATFORM = ").unwrap().trim());
+                current
             } else {
-                None
+                // Other entity - finalize current platform
+                self.state = ParseState::Idle;
+                self.current_platform.take()
             }
         } else if let Some(key_value) = line.strip_prefix('!') {
             self.parse_platform_metadata(key_value)
@@ -233,22 +841,18 @@ impl<R: BufRead> SoftReader<R> {
     }
 
     /// Handle lines when in sample state
-    fn handle_sample_state(&mut self, line: &str) -> Result<Option<GseRecord>> {
+    fn handle_sample_state(&mut self, line: &str) -> Result<Option<GsmRecord>> {
         if line.starts_with('^') {
-            // Start of new section
+            // Start of new section - emit current sample if any
             if line.strip_prefix("^SAMPLE = ").is_some() {
-                // New sample - finish current one
-                self.current_sample = None;
-                Ok(None)
-            } else if line.strip_prefix("^SERIES = ").is_some() {
-                // New series - return current series
-                self.current_sample = None;
-                self.state = ParseState::Idle;
-                Ok(self.current_series.take())
+                // New sample - return current one and start new
+                let current = self.current_sample.take();
+                self.start_sample(line.strip_prefix("^SAMPLE = ").unwrap().trim());
+                Ok(current)
             } else {
-                // Other entity - continue in series context
-                self.current_sample = None;
-                Ok(None)
+                // Other entity - return current sample
+                self.state = ParseState::Idle;
+                Ok(self.current_sample.take())
             }
         } else if let Some(key_value) = line.strip_prefix('!') {
             self.parse_sample_metadata(key_value)
@@ -258,17 +862,18 @@ impl<R: BufRead> SoftReader<R> {
     }
 
     /// Handle lines when in dataset state
-    fn handle_dataset_state(&mut self, line: &str) -> Option<GseRecord> {
+    fn handle_dataset_state(&mut self, line: &str) -> Option<GdsRecord> {
         if line.starts_with('^') {
-            // Start of new section - finalize current dataset
+            // Start of new section - return current dataset if any
             if line.strip_prefix("^DATASET = ").is_some() {
-                // New dataset - current one is lost (no storage for multiple datasets)
-                self.current_dataset = None;
-                None
+                // New dataset - return current one and start new
+                let current = self.current_dataset.take();
+                self.start_dataset(line.strip_prefix("^DATASET = ").unwrap().trim());
+                current
             } else {
                 // Other entity - finalize current dataset
-                self.current_dataset = None;
-                None
+                self.state = ParseState::Idle;
+                self.current_dataset.take()
             }
         } else if let Some(key_value) = line.strip_prefix('!') {
             self.parse_dataset_metadata(key_value)
@@ -278,9 +883,9 @@ impl<R: BufRead> SoftReader<R> {
     }
 
     /// Handle lines when in subset state
-    fn handle_subset_state(&mut self, line: &str) -> Option<GseRecord> {
+    fn handle_subset_state(&mut self, line: &str) -> Option<GdsRecord> {
         if line.starts_with('^') {
-            // Start of new section - add completed subset to dataset
+            // Start of new section - add completed subset to dataset (single take!)
             if let Some(subset) = self.current_subset.take() {
                 if let Some(dataset) = &mut self.current_dataset {
                     dataset.subsets.push(subset);
@@ -288,10 +893,12 @@ impl<R: BufRead> SoftReader<R> {
             }
 
             if line.strip_prefix("^SUBSET = ").is_some() {
-                // New subset - start fresh
-                self.start_subset(line.strip_prefix("^SUBSET = ").unwrap().trim())
+                // New subset - start fresh (already added above)
+                self.start_subset(line.strip_prefix("^SUBSET = ").unwrap().trim());
+                None
             } else {
-                // Other entity - return None for now
+                // Other entity - finalize current subset (already added above) and transition
+                self.state = ParseState::Idle;
                 None
             }
         } else if let Some(key_value) = line.strip_prefix('!') {
@@ -460,7 +1067,7 @@ impl<R: BufRead> SoftReader<R> {
     }
 
     /// Start parsing a new series
-    fn start_series(&mut self, accession: &str) -> Option<GseRecord> {
+    fn start_series(&mut self, accession: &str) {
         self.state = ParseState::InSeries;
         self.current_series = Some(GseRecord {
             local_id: accession.to_string(),
@@ -474,11 +1081,10 @@ impl<R: BufRead> SoftReader<R> {
             pubmed_id: Vec::new(),
             metadata: HashMap::new(),
         });
-        None
     }
 
     /// Start parsing a new platform
-    fn start_platform(&mut self, accession: &str) -> Option<GseRecord> {
+    fn start_platform(&mut self, accession: &str) {
         self.state = ParseState::InPlatform;
         self.current_platform = Some(GplRecord {
             local_id: accession.to_string(),
@@ -496,11 +1102,10 @@ impl<R: BufRead> SoftReader<R> {
             metadata: HashMap::new(),
             annotation_table: None,
         });
-        None
     }
 
     /// Start parsing a new sample
-    fn start_sample(&mut self, accession: &str) -> Option<GseRecord> {
+    fn start_sample(&mut self, accession: &str) {
         self.state = ParseState::InSample;
         self.current_sample = Some(GsmRecord {
             local_id: accession.to_string(),
@@ -518,11 +1123,10 @@ impl<R: BufRead> SoftReader<R> {
             metadata: HashMap::new(),
             data_table: None,
         });
-        None
     }
 
     /// Start parsing a new dataset
-    fn start_dataset(&mut self, accession: &str) -> Option<GseRecord> {
+    fn start_dataset(&mut self, accession: &str) {
         self.state = ParseState::InDataset;
         self.current_dataset = Some(GdsRecord {
             geo_accession: accession.to_string(),
@@ -538,11 +1142,10 @@ impl<R: BufRead> SoftReader<R> {
             column_descs: HashMap::new(),
             data_table: None,
         });
-        None
     }
 
     /// Start parsing a new subset
-    fn start_subset(&mut self, accession: &str) -> Option<GseRecord> {
+    fn start_subset(&mut self, accession: &str) {
         self.state = ParseState::InSubset;
         self.current_subset = Some(GdsSubset {
             local_id: accession.to_string(),
@@ -550,7 +1153,6 @@ impl<R: BufRead> SoftReader<R> {
             sample_ids: Vec::new(),
             subset_type: String::new(),
         });
-        None
     }
 
     /// Parse series metadata
@@ -576,9 +1178,11 @@ impl<R: BufRead> SoftReader<R> {
                     _ => {
                         // Route all unrecognized attributes to metadata HashMap
                         // (includes download-only fields like _status, _submission_date, etc.)
+                        // Strip the Series_ prefix for cleaner keys
+                        let meta_key = key.strip_prefix("Series_").unwrap_or(key);
                         series
                             .metadata
-                            .entry(key.to_string())
+                            .entry(meta_key.to_string())
                             .or_insert_with(Vec::new)
                             .push(value.to_string());
                     }
@@ -589,22 +1193,27 @@ impl<R: BufRead> SoftReader<R> {
     }
 
     /// Parse platform metadata
-    fn parse_platform_metadata(&mut self, key_value: &str) -> Option<GseRecord> {
-        if let Some((key, value)) = key_value.split_once(" = ") {
-            let key = key.trim();
+    fn parse_platform_metadata(&mut self, key_value: &str) -> Option<GplRecord> {
+        let key = key_value.trim();
+
+        // Handle special cases without = first
+        if key == "Platform_table_begin" {
+            self.state = ParseState::InPlatformTable;
+            self.current_table = Some(DataTable {
+                columns: Vec::new(),
+                rows: Vec::new(),
+            });
+            return None;
+        }
+
+        if let Some((k, value)) = key_value.split_once(" = ") {
+            let k = k.trim();
             let value = value.trim();
 
             if let Some(platform) = &mut self.current_platform {
-                match key {
+                match k {
                     "Platform_title" => platform.title = value.to_string(),
                     "Platform_technology" => platform.technology = value.to_string(),
-                    "!Platform_table_begin" => {
-                        self.state = ParseState::InPlatformTable;
-                        self.current_table = Some(DataTable {
-                            columns: Vec::new(),
-                            rows: Vec::new(),
-                        });
-                    }
                     _ => {} // Handle other platform metadata as needed
                 }
             }
@@ -613,13 +1222,25 @@ impl<R: BufRead> SoftReader<R> {
     }
 
     /// Parse sample metadata
-    fn parse_sample_metadata(&mut self, key_value: &str) -> Result<Option<GseRecord>> {
-        if let Some((key, value)) = key_value.split_once(" = ") {
-            let key = key.trim();
+    fn parse_sample_metadata(&mut self, key_value: &str) -> Result<Option<GsmRecord>> {
+        let key = key_value.trim();
+
+        // Handle special cases without = first
+        if key == "Sample_table_begin" {
+            self.state = ParseState::InSampleTable;
+            self.current_table = Some(DataTable {
+                columns: Vec::new(),
+                rows: Vec::new(),
+            });
+            return Ok(None);
+        }
+
+        if let Some((k, value)) = key_value.split_once(" = ") {
+            let k = k.trim();
             let value = value.trim();
 
             if let Some(sample) = &mut self.current_sample {
-                match key {
+                match k {
                     "Sample_title" => sample.title = value.to_string(),
                     "Sample_geo_accession" => sample.geo_accession = Some(value.to_string()),
                     "Sample_platform_id" => sample.platform_id = value.to_string(),
@@ -627,13 +1248,6 @@ impl<R: BufRead> SoftReader<R> {
                         if let Ok(count) = value.parse::<u8>() {
                             sample.channel_count = count;
                         }
-                    }
-                    "!sample_table_begin" => {
-                        self.state = ParseState::InSampleTable;
-                        self.current_table = Some(DataTable {
-                            columns: Vec::new(),
-                            rows: Vec::new(),
-                        });
                     }
                     key if key.starts_with("Sample_characteristics_") => {
                         // Extract channel and characteristics type
@@ -671,7 +1285,16 @@ impl<R: BufRead> SoftReader<R> {
                             }
                         }
                     }
-                    _ => {} // Handle other sample metadata as needed
+                    _ => {
+                        // Route all unrecognized attributes to metadata HashMap
+                        // Strip the Sample_ prefix for cleaner keys
+                        let meta_key = key.strip_prefix("Sample_").unwrap_or(key);
+                        sample
+                            .metadata
+                            .entry(meta_key.to_string())
+                            .or_insert_with(Vec::new)
+                            .push(value.to_string());
+                    }
                 }
             }
         }
@@ -679,13 +1302,25 @@ impl<R: BufRead> SoftReader<R> {
     }
 
     /// Parse dataset metadata
-    fn parse_dataset_metadata(&mut self, key_value: &str) -> Option<GseRecord> {
-        if let Some((key, value)) = key_value.split_once(" = ") {
-            let key = key.trim();
+    fn parse_dataset_metadata(&mut self, key_value: &str) -> Option<GdsRecord> {
+        let key = key_value.trim();
+
+        // Handle special cases without = first
+        if key == "Dataset_table_begin" {
+            self.state = ParseState::InDatasetTable;
+            self.current_table = Some(DataTable {
+                columns: Vec::new(),
+                rows: Vec::new(),
+            });
+            return None;
+        }
+
+        if let Some((k, value)) = key_value.split_once(" = ") {
+            let k = k.trim();
             let value = value.trim();
 
             if let Some(dataset) = &mut self.current_dataset {
-                match key {
+                match k {
                     "dataset_title" => dataset.title = value.to_string(),
                     "dataset_description" => dataset.description = value.to_string(),
                     "dataset_platform" => dataset.platform = value.to_string(),
@@ -701,13 +1336,6 @@ impl<R: BufRead> SoftReader<R> {
                             dataset.sample_count = count;
                         }
                     }
-                    "!dataset_table_begin" => {
-                        self.state = ParseState::InDatasetTable;
-                        self.current_table = Some(DataTable {
-                            columns: Vec::new(),
-                            rows: Vec::new(),
-                        });
-                    }
                     _ => {
                         dataset
                             .metadata
@@ -722,7 +1350,7 @@ impl<R: BufRead> SoftReader<R> {
     }
 
     /// Parse subset metadata
-    fn parse_subset_metadata(&mut self, key_value: &str) -> Option<GseRecord> {
+    fn parse_subset_metadata(&mut self, key_value: &str) -> Option<GdsRecord> {
         if let Some((key, value)) = key_value.split_once(" = ") {
             let key = key.trim();
             let value = value.trim();
@@ -771,6 +1399,19 @@ pub fn open_soft_file_gz<P: AsRef<Path>>(
     let gz_reader = flate2::read::GzDecoder::new(file);
     let reader = std::io::BufReader::new(gz_reader);
     Ok(SoftReader::new(reader))
+}
+
+impl SoftReader<std::io::BufReader<std::fs::File>> {
+    /// Open a SOFT file from a path
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be opened or read.
+    pub fn open<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
+        let file = std::fs::File::open(path)?;
+        let reader = std::io::BufReader::new(file);
+        Ok(Self::new(reader))
+    }
 }
 
 impl SoftReader<std::io::BufReader<flate2::read::GzDecoder<std::fs::File>>> {
@@ -871,6 +1512,24 @@ pub struct GplRecord {
 pub struct DataTable {
     pub columns: Vec<ColumnDescriptor>,
     pub rows: Vec<Vec<String>>,
+}
+
+/// Heterogeneous record type for parsing mixed SOFT files
+#[derive(Debug, Clone)]
+pub enum SoftRecord {
+    Platform(GplRecord),
+    Sample(GsmRecord),
+    Series(GseRecord),
+    Dataset(GdsRecord),
+}
+
+/// Container for all records in a SOFT file
+#[derive(Debug, Clone, Default)]
+pub struct SoftFile {
+    pub platforms: Vec<GplRecord>,
+    pub samples: Vec<GsmRecord>,
+    pub series: Vec<GseRecord>,
+    pub datasets: Vec<GdsRecord>,
 }
 
 /// Column descriptor for data tables

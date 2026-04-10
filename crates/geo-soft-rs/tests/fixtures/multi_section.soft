@@ -1,0 +1,49 @@
+^PLATFORM = GPLMULTI1
+!Platform_title = First Multi Platform
+!Platform_geo_accession = GPLMULTI1
+!Platform_table_begin
+ID_REF	IDENTIFIER
+p1	gene1
+!Platform_table_end
+
+^PLATFORM = GPLMULTI2
+!Platform_title = Second Multi Platform
+!Platform_geo_accession = GPLMULTI2
+!Platform_table_begin
+ID_REF	IDENTIFIER
+p2	gene2
+!Platform_table_end
+
+^SAMPLE = GSMMULTI1
+!Sample_title = First Multi Sample
+!Sample_geo_accession = GSMMULTI1
+!Sample_platform_id = GPLMULTI1
+!Sample_channel_count = 1
+!Sample_table_begin
+ID_REF	VALUE
+p1	1.0
+!Sample_table_end
+
+^SAMPLE = GSMMULTI2
+!Sample_title = Second Multi Sample
+!Sample_geo_accession = GSMMULTI2
+!Sample_platform_id = GPLMULTI2
+!Sample_channel_count = 1
+!Sample_table_begin
+ID_REF	VALUE
+p2	2.0
+!Sample_table_end
+
+^SERIES = GSEMULTI1
+!Series_title = First Multi Series
+!Series_geo_accession = GSEMULTI1
+!Series_summary = First series in multi-section file
+!Series_sample_id = GSMMULTI1
+!Series_platform_id = GPLMULTI1
+
+^SERIES = GSEMULTI2
+!Series_title = Second Multi Series
+!Series_geo_accession = GSEMULTI2
+!Series_summary = Second series in multi-section file
+!Series_sample_id = GSMMULTI2
+!Series_platform_id = GPLMULTI2

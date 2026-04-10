@@ -1,0 +1,27 @@
+^DATASET = GDSTEST1
+!dataset_title = Test Dataset with Subsets
+!dataset_description = A test dataset for GDS parsing with subsets
+!dataset_type = Expression
+!dataset_platform = GPLTEST1
+!dataset_sample_organism = Homo sapiens
+!dataset_sample_type = RNA
+!dataset_feature_count = 3
+!dataset_sample_count = 4
+!dataset_table_begin
+ID_REF	IDENTIFIER	GSMTEST5	GSMTEST6	GSMTEST7	GSMTEST8
+#ID_REF = Probe identifier
+#IDENTIFIER = Gene identifier
+probe1	gene1	1.5	2.1	1.8	2.3
+probe2	gene2	0.8	1.3	1.1	1.5
+probe3	gene3	1.2	0.9	1.4	1.1
+!dataset_table_end
+
+^SUBSET = GDSTEST1_control
+!subset_description = Control group samples
+!subset_type = disease_state
+!subset_sample_id = GSMTEST5, GSMTEST6
+
+^SUBSET = GDSTEST1_treatment
+!subset_description = Treatment group samples
+!subset_type = disease_state
+!subset_sample_id = GSMTEST7, GSMTEST8

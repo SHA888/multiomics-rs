@@ -22,6 +22,8 @@ Thumbs.db
 *.soft
 *.soft.gz
 !resources/geo/*.soft
+!crates/*/tests/fixtures/*.soft
+!crates/*/tests/fixtures/*.soft.gz
 *.gct
 *.gct.gz
 *.tsv
