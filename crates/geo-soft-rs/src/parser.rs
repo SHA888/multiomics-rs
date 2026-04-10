@@ -708,13 +708,10 @@ impl<R: BufRead> SoftReader<R> {
             ParseState::Idle => {
                 // handle_idle_state returns a flushed record when new entity follows pending
                 // record
-                if let Some(record) = self.handle_idle_state(line) {
-                    // Extract GseRecord from SoftRecord if it is one
-                    if let SoftRecord::Series(gse) = record {
-                        return Ok(Some(gse));
-                    }
-                    // Other record types are not returned by this function
+                if let Some(SoftRecord::Series(gse)) = self.handle_idle_state(line) {
+                    return Ok(Some(gse));
                 }
+                // Other record types are not returned by this function
                 Ok(None)
             }
             ParseState::InSeries => Ok(self.handle_series_state(line)),
@@ -722,10 +719,8 @@ impl<R: BufRead> SoftReader<R> {
                 let _ = self.handle_platform_state(line);
                 // If transitioned to Idle (cross-entity), process the line in Idle state
                 if self.state == ParseState::Idle {
-                    if let Some(record) = self.handle_idle_state(line) {
-                        if let SoftRecord::Series(gse) = record {
-                            return Ok(Some(gse));
-                        }
+                    if let Some(SoftRecord::Series(gse)) = self.handle_idle_state(line) {
+                        return Ok(Some(gse));
                     }
                 }
                 Ok(None)
@@ -734,10 +729,8 @@ impl<R: BufRead> SoftReader<R> {
                 let _ = self.handle_sample_state(line);
                 // If transitioned to Idle (cross-entity), process the line in Idle state
                 if self.state == ParseState::Idle {
-                    if let Some(record) = self.handle_idle_state(line) {
-                        if let SoftRecord::Series(gse) = record {
-                            return Ok(Some(gse));
-                        }
+                    if let Some(SoftRecord::Series(gse)) = self.handle_idle_state(line) {
+                        return Ok(Some(gse));
                     }
                 }
                 Ok(None)
@@ -746,10 +739,8 @@ impl<R: BufRead> SoftReader<R> {
                 let _ = self.handle_dataset_state(line);
                 // If transitioned to Idle (cross-entity), process the line in Idle state
                 if self.state == ParseState::Idle {
-                    if let Some(record) = self.handle_idle_state(line) {
-                        if let SoftRecord::Series(gse) = record {
-                            return Ok(Some(gse));
-                        }
+                    if let Some(SoftRecord::Series(gse)) = self.handle_idle_state(line) {
+                        return Ok(Some(gse));
                     }
                 }
                 Ok(None)

@@ -371,7 +371,7 @@ fn test_null_sentinels() -> geo_soft_rs::Result<()> {
 !Sample_channel_count = 1
 !Sample_table_begin
 ID_REF	VALUE
-probe1	
+probe1
 probe2	NA
 probe3	null
 probe4	NaN
