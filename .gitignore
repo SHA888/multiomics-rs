@@ -111,3 +111,4 @@ criterion/
 # Test artifacts
 tests/output/
 test_data/output/
+.skill/

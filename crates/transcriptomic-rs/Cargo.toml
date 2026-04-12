@@ -15,7 +15,7 @@ arrow = { workspace = true }
 rayon = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
-geo-soft-rs = { version = "0.0.0", path = "../geo-soft-rs" }
+geo-soft-rs = { version = "0.1.0", path = "../geo-soft-rs" }
 
 [dev-dependencies]
 criterion = { workspace = true }

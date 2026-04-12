@@ -372,14 +372,14 @@ pub struct SoftFile {
              `geo_accession = Some("GSM99999")`
 - [x] G1.4.13 Official GDS6063 test with real-world data (7 subsets, 10 samples)
 
-### [ ] G1.5 Documentation + release
+### [x] G1.5 Documentation + release
 
-- [ ] G1.5.1 All public types and methods have `///` doc comments with examples
-- [ ] G1.5.2 Crate `README.md` with minimal usage example
-- [ ] G1.5.3 `CHANGELOG.md` entry
-- [ ] G1.5.4 `cargo doc --no-deps` builds without warnings
-- [ ] G1.5.5 Version `0.0.0` → `0.1.0`, publish to crates.io
-- [ ] G1.5.6 Verify crates.io page renders
+- [x] G1.5.1 All public types and methods have `///` doc comments with examples
+- [x] G1.5.2 Crate `README.md` with minimal usage example
+- [x] G1.5.3 `CHANGELOG.md` entry
+- [x] G1.5.4 `cargo doc --no-deps` builds without warnings
+- [x] G1.5.5 Version `0.0.0` → `0.1.0`
+- [ ] G1.5.6 Publish to crates.io and verify page renders
 
 ---
 

@@ -84,7 +84,21 @@ pub struct SoftReader<R: BufRead> {
 }
 
 impl<R: BufRead> SoftReader<R> {
-    /// Create a new SOFT reader
+    /// Create a new `SoftReader` from any buffered reader
+    ///
+    /// This is useful for reading from sources other than files
+    /// (e.g., network streams, in-memory buffers).
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use std::io::BufReader;
+    /// use geo_soft_rs::SoftReader;
+    ///
+    /// let data = b"^SAMPLE = GSM1\n!Sample_title = Test\n";
+    /// let reader = BufReader::new(&data[..]);
+    /// let mut soft_reader = SoftReader::new(reader);
+    /// ```
     pub fn new(reader: R) -> Self {
         Self {
             reader,
@@ -102,26 +116,127 @@ impl<R: BufRead> SoftReader<R> {
     }
 
     /// Iterate over GSE (Series) records
+    ///
+    /// Returns an iterator that yields `GseRecord` items in the order
+    /// they appear in the file.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use geo_soft_rs::SoftReader;
+    ///
+    /// let mut reader = SoftReader::open("GSE1234_family.soft")?;
+    ///
+    /// for series in reader.series() {
+    ///     let series = series?;
+    ///     println!("Series: {} - {} samples", series.title, series.sample_ids.len());
+    /// }
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn series(&mut self) -> impl Iterator<Item = Result<GseRecord>> + '_ {
         std::iter::from_fn(move || self.next_series())
     }
 
     /// Iterate over GSM (Sample) records
+    ///
+    /// Returns an iterator that yields `GsmRecord` items in the order
+    /// they appear in the file. Each sample may have an attached data table
+    /// that can be converted to Arrow format.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use geo_soft_rs::SoftReader;
+    ///
+    /// let mut reader = SoftReader::open("GSE1234_family.soft")?;
+    ///
+    /// for sample in reader.samples() {
+    ///     let sample = sample?;
+    ///     println!("Sample: {} ({} channels)", sample.title, sample.channel_count);
+    ///     
+    ///     // Convert to Arrow RecordBatch if data table exists
+    ///     if let Ok(batch) = sample.to_record_batch() {
+    ///         println!("  Data: {} rows", batch.num_rows());
+    ///     }
+    /// }
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn samples(&mut self) -> impl Iterator<Item = Result<GsmRecord>> + '_ {
         std::iter::from_fn(move || self.next_sample())
     }
 
     /// Iterate over GPL (Platform) records
+    ///
+    /// Returns an iterator that yields `GplRecord` items describing
+    /// the array or sequencing platforms used in the experiment.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use geo_soft_rs::SoftReader;
+    ///
+    /// let mut reader = SoftReader::open("GPL1234.soft")?;
+    ///
+    /// for platform in reader.platforms() {
+    ///     let platform = platform?;
+    ///     println!("Platform: {}", platform.title);
+    ///     println!("  Technology: {}", platform.technology);
+    ///     println!("  Organisms: {:?}", platform.organism);
+    /// }
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn platforms(&mut self) -> impl Iterator<Item = Result<GplRecord>> + '_ {
         std::iter::from_fn(move || self.next_platform())
     }
 
     /// Iterate over GDS (Dataset) records
+    ///
+    /// Returns an iterator that yields `GdsRecord` items containing
+    /// curated datasets with associated data tables and subset definitions.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use geo_soft_rs::SoftReader;
+    ///
+    /// let mut reader = SoftReader::open("GDS6063.soft")?;
+    ///
+    /// for dataset in reader.datasets() {
+    ///     let dataset = dataset?;
+    ///     println!("Dataset: {}", dataset.title);
+    ///     println!("  Features: {}, Samples: {}",
+    ///         dataset.feature_count, dataset.sample_count);
+    ///     println!("  Subsets: {}", dataset.subsets.len());
+    /// }
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn datasets(&mut self) -> impl Iterator<Item = Result<GdsRecord>> + '_ {
         std::iter::from_fn(move || self.next_dataset())
     }
 
     /// Iterate over all records in file order (heterogeneous)
+    ///
+    /// Returns an iterator that yields `SoftRecord` enum values,
+    /// allowing you to process all entity types in the order they
+    /// appear in the file.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use geo_soft_rs::{SoftReader, SoftRecord};
+    ///
+    /// let mut reader = SoftReader::open("GSE1234_family.soft")?;
+    ///
+    /// for record in reader.records() {
+    ///     match record? {
+    ///         SoftRecord::Series(s) => println!("Series: {}", s.title),
+    ///         SoftRecord::Sample(s) => println!("Sample: {}", s.title),
+    ///         SoftRecord::Platform(p) => println!("Platform: {}", p.title),
+    ///         SoftRecord::Dataset(d) => println!("Dataset: {}", d.title),
+    ///     }
+    /// }
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn records(&mut self) -> impl Iterator<Item = Result<SoftRecord>> + '_ {
         std::iter::from_fn(move || self.next_record())
     }
@@ -653,6 +768,32 @@ impl<R: BufRead> SoftReader<R> {
     }
 
     /// Read all records eagerly into a `SoftFile`
+    ///
+    /// This method parses the entire file and collects all records into
+    /// a single `SoftFile` struct. Useful when you need random access
+    /// to all records rather than streaming iteration.
+    ///
+    /// For large files, consider using the streaming iterators (`series()`,
+    /// `samples()`, etc.) instead to avoid loading everything into memory.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use geo_soft_rs::SoftReader;
+    ///
+    /// let mut reader = SoftReader::open("GSE1234_family.soft")?;
+    /// let file = reader.read_all()?;
+    ///
+    /// println!("Loaded {} series, {} samples, {} platforms, {} datasets",
+    ///     file.series.len(), file.samples.len(),
+    ///     file.platforms.len(), file.datasets.len());
+    ///
+    /// // Access any record by index
+    /// if let Some(first_sample) = file.samples.first() {
+    ///     println!("First sample: {}", first_sample.title);
+    /// }
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     ///
     /// # Errors
     ///
@@ -1364,7 +1505,20 @@ impl<R: BufRead> SoftReader<R> {
     }
 }
 
-/// Open a SOFT file from a path with auto-detect gzip
+/// Open a SOFT file from a path
+///
+/// Convenience function that creates a `SoftReader` for an uncompressed file.
+/// For gzipped files, use [`open_soft_file_gz`] or [`SoftReader::open_gz`].
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use geo_soft_rs::open_soft_file;
+///
+/// let reader = open_soft_file("GSE1234_family.soft")?;
+/// // Use reader to iterate over records...
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 ///
 /// # Errors
 ///
@@ -1380,9 +1534,22 @@ pub fn open_soft_file<P: AsRef<Path>>(
 
 /// Open a gzipped SOFT file
 ///
+/// Convenience function that creates a `SoftReader` for a gzip-compressed file.
+/// Automatically decompresses the file while parsing.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use geo_soft_rs::open_soft_file_gz;
+///
+/// let reader = open_soft_file_gz("GSE1234_family.soft.gz")?;
+/// // Use reader to iterate over records...
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+///
 /// # Errors
 ///
-/// Returns an error if the file cannot be opened or read.
+/// Returns an error if the file cannot be opened, decompressed, or read.
 pub fn open_soft_file_gz<P: AsRef<Path>>(
     path: P,
 ) -> Result<SoftReader<std::io::BufReader<flate2::read::GzDecoder<std::fs::File>>>> {
@@ -1394,6 +1561,22 @@ pub fn open_soft_file_gz<P: AsRef<Path>>(
 
 impl SoftReader<std::io::BufReader<std::fs::File>> {
     /// Open a SOFT file from a path
+    ///
+    /// Creates a `SoftReader` for reading uncompressed SOFT files.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use geo_soft_rs::SoftReader;
+    ///
+    /// let mut reader = SoftReader::open("GSE1234_family.soft")?;
+    ///
+    /// for series in reader.series() {
+    ///     let series = series?;
+    ///     println!("Series: {}", series.title);
+    /// }
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     ///
     /// # Errors
     ///
@@ -1408,9 +1591,25 @@ impl SoftReader<std::io::BufReader<std::fs::File>> {
 impl SoftReader<std::io::BufReader<flate2::read::GzDecoder<std::fs::File>>> {
     /// Open a gzipped SOFT file
     ///
+    /// Creates a `SoftReader` for reading gzip-compressed SOFT files.
+    /// Automatically decompresses the stream while parsing.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use geo_soft_rs::SoftReader;
+    ///
+    /// let mut reader = SoftReader::open_gz("GSE1234_family.soft.gz")?;
+    ///
+    /// // Read all records into memory
+    /// let file = reader.read_all()?;
+    /// println!("Loaded {} samples", file.samples.len());
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    ///
     /// # Errors
     ///
-    /// Returns an error if the file cannot be opened or read.
+    /// Returns an error if the file cannot be opened, decompressed, or read.
     pub fn open_gz<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
         let file = std::fs::File::open(path)?;
         let gz_reader = flate2::read::GzDecoder::new(file);
@@ -1419,7 +1618,26 @@ impl SoftReader<std::io::BufReader<flate2::read::GzDecoder<std::fs::File>>> {
     }
 }
 
-/// Represents a GDS (Dataset) record
+/// Represents a GDS (Dataset) record from NCBI GEO
+///
+/// A GDS record contains curated datasets derived from multiple samples,
+/// typically with attached data tables containing expression values.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use geo_soft_rs::SoftReader;
+///
+/// let mut reader = SoftReader::open("GDS6063.soft")?;
+/// let dataset = reader.datasets().next().expect("Should have dataset")?;
+///
+/// println!("Dataset: {} with {} features and {} samples",
+///     dataset.title, dataset.feature_count, dataset.sample_count);
+///
+/// // Convert data table to Arrow RecordBatch
+/// let batch = dataset.to_record_batch()?;
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 #[derive(Debug, Clone)]
 pub struct GdsRecord {
     pub geo_accession: String,
@@ -1436,7 +1654,25 @@ pub struct GdsRecord {
     pub data_table: Option<DataTable>,
 }
 
-/// Represents a GDS subset
+/// Represents a subset of samples within a GDS dataset
+///
+/// Subsets are used to group samples by experimental conditions
+/// (e.g., disease state, treatment type, time points).
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use geo_soft_rs::SoftReader;
+///
+/// let mut reader = SoftReader::open("GDS6063.soft")?;
+/// let dataset = reader.datasets().next().expect("Should have dataset")?;
+///
+/// for subset in &dataset.subsets {
+///     println!("Subset {}: {} samples of type {}",
+///         subset.local_id, subset.sample_ids.len(), subset.subset_type);
+/// }
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 #[derive(Debug, Clone)]
 pub struct GdsSubset {
     pub local_id: String,
@@ -1445,7 +1681,24 @@ pub struct GdsSubset {
     pub subset_type: String,
 }
 
-/// Represents a GSE (Series) record
+/// Represents a GSE (Series) record from NCBI GEO
+///
+/// A series record groups together related samples (GSM records)
+/// as part of a single experiment. Series contain metadata about the
+/// overall experiment design, contributors, and related publications.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use geo_soft_rs::SoftReader;
+///
+/// let mut reader = SoftReader::open("GSE1234_family.soft")?;
+/// let series = reader.series().next().expect("Should have series")?;
+///
+/// println!("Series: {} with {} samples", series.title, series.sample_ids.len());
+/// println!("Contributors: {:?}", series.contributor);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 #[derive(Debug, Clone)]
 pub struct GseRecord {
     pub local_id: String,
@@ -1460,7 +1713,28 @@ pub struct GseRecord {
     pub metadata: std::collections::HashMap<String, Vec<String>>,
 }
 
-/// Represents a GSM (Sample) record
+/// Represents a GSM (Sample) record from NCBI GEO
+///
+/// A sample record contains metadata about a single biological sample
+/// and optionally an attached data table with expression values.
+/// Supports both single-channel and dual-channel (two-color) arrays.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use geo_soft_rs::SoftReader;
+///
+/// let mut reader = SoftReader::open("GSE1234_family.soft")?;
+/// let sample = reader.samples().next().expect("Should have sample")?;
+///
+/// println!("Sample: {} on platform {}", sample.title, sample.platform_id);
+///
+/// // Convert data table to Arrow RecordBatch for analysis
+/// if let Ok(batch) = sample.to_record_batch() {
+///     println!("Data table has {} rows", batch.num_rows());
+/// }
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 #[derive(Debug, Clone)]
 pub struct GsmRecord {
     pub local_id: String,
@@ -1479,7 +1753,25 @@ pub struct GsmRecord {
     pub data_table: Option<DataTable>,
 }
 
-/// Represents a GPL (Platform) record
+/// Represents a GPL (Platform) record from NCBI GEO
+///
+/// A platform record describes the array or sequencing technology
+/// used to measure gene expression. It may include an annotation table
+/// mapping probe IDs to gene identifiers.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use geo_soft_rs::SoftReader;
+///
+/// let mut reader = SoftReader::open("GPL1234.soft")?;
+/// let platform = reader.platforms().next().expect("Should have platform")?;
+///
+/// println!("Platform: {} - {}", platform.geo_accession, platform.title);
+/// println!("Technology: {}", platform.technology);
+/// println!("Organisms: {:?}", platform.organism);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 #[derive(Debug, Clone)]
 pub struct GplRecord {
     pub local_id: String,
@@ -1498,7 +1790,31 @@ pub struct GplRecord {
     pub annotation_table: Option<DataTable>,
 }
 
-/// Represents a data table
+/// Represents a data table from a SOFT file
+///
+/// Data tables contain tabular expression data with column headers
+/// and row values. The first column is typically `ID_REF` containing
+/// probe identifiers, followed by value columns.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use geo_soft_rs::SoftReader;
+///
+/// let mut reader = SoftReader::open("GSE1234_family.soft")?;
+/// let sample = reader.samples().next().expect("Should have sample")?;
+///
+/// if let Some(table) = &sample.data_table {
+///     println!("Table has {} columns and {} rows",
+///         table.columns.len(), table.rows.len());
+///     
+///     // Access column names
+///     for col in &table.columns {
+///         println!("Column: {} - {}", col.name, col.description);
+///     }
+/// }
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 #[derive(Debug, Clone)]
 pub struct DataTable {
     pub columns: Vec<ColumnDescriptor>,
@@ -1506,6 +1822,27 @@ pub struct DataTable {
 }
 
 /// Heterogeneous record type for parsing mixed SOFT files
+///
+/// This enum allows iterating over all records in a SOFT file
+/// regardless of their type (Series, Sample, Platform, or Dataset).
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use geo_soft_rs::SoftReader;
+///
+/// let mut reader = SoftReader::open("GSE1234_family.soft")?;
+///
+/// for record in reader.records() {
+///     match record? {
+///         geo_soft_rs::SoftRecord::Series(s) => println!("Series: {}", s.title),
+///         geo_soft_rs::SoftRecord::Sample(s) => println!("Sample: {}", s.title),
+///         geo_soft_rs::SoftRecord::Platform(p) => println!("Platform: {}", p.title),
+///         geo_soft_rs::SoftRecord::Dataset(d) => println!("Dataset: {}", d.title),
+///     }
+/// }
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 #[derive(Debug, Clone)]
 pub enum SoftRecord {
     Platform(GplRecord),
@@ -1514,7 +1851,28 @@ pub enum SoftRecord {
     Dataset(GdsRecord),
 }
 
-/// Container for all records in a SOFT file
+/// Container for all records parsed from a SOFT file
+///
+/// This struct holds collections of all entity types found in a SOFT file,
+/// allowing easy access to platforms, samples, series, and datasets.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use geo_soft_rs::SoftReader;
+///
+/// let mut reader = SoftReader::open("GSE1234_family.soft")?;
+/// let file = reader.read_all()?;
+///
+/// println!("Parsed {} series, {} samples, {} platforms",
+///     file.series.len(), file.samples.len(), file.platforms.len());
+///
+/// // Access all samples
+/// for sample in &file.samples {
+///     println!("Sample: {}", sample.title);
+/// }
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct SoftFile {
     pub platforms: Vec<GplRecord>,
@@ -1524,6 +1882,21 @@ pub struct SoftFile {
 }
 
 /// Column descriptor for data tables
+///
+/// Describes a single column in a SOFT data table, including its name
+/// and optional description (from `#` comment lines in the SOFT file).
+///
+/// # Example
+///
+/// ```rust
+/// use geo_soft_rs::SoftReader;
+///
+/// // When a SOFT file has a line like:
+/// // #VALUE=Signal intensity
+/// // The ColumnDescriptor for the VALUE column will have:
+/// // name = "VALUE"
+/// // description = "Signal intensity"
+/// ```
 #[derive(Debug, Clone)]
 pub struct ColumnDescriptor {
     pub name: String,
@@ -1531,11 +1904,32 @@ pub struct ColumnDescriptor {
 }
 
 impl GdsRecord {
-    /// Convert to Arrow `RecordBatch`
+    /// Convert the dataset data table to an Arrow `RecordBatch`
+    ///
+    /// The resulting `RecordBatch` contains columns for feature identifiers
+    /// and sample expression values. This enables zero-copy interoperability
+    /// with data science tools like Polars, Pandas (via PyArrow), and others.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use geo_soft_rs::SoftReader;
+    ///
+    /// let mut reader = SoftReader::open("GDS6063.soft")?;
+    /// let dataset = reader.datasets().next().expect("Should have dataset")?;
+    ///
+    /// let batch = dataset.to_record_batch()?;
+    /// println!("Batch schema: {:?}", batch.schema());
+    /// println!("Rows: {}, Columns: {}", batch.num_rows(), batch.num_columns());
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     ///
     /// # Errors
     ///
-    /// Returns an error if the conversion fails.
+    /// Returns an error if:
+    /// - No data table is available
+    /// - The data table is empty
+    /// - Numeric conversion fails
     pub fn to_record_batch(&self) -> Result<RecordBatch> {
         use std::sync::Arc;
 
@@ -1744,11 +2138,34 @@ impl GseRecord {
 }
 
 impl GsmRecord {
-    /// Convert to Arrow `RecordBatch`
+    /// Convert the sample data table to an Arrow `RecordBatch`
+    ///
+    /// The resulting `RecordBatch` contains probe IDs and expression values.
+    /// Supports both single-channel and dual-channel (two-color) array data.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use geo_soft_rs::SoftReader;
+    ///
+    /// let mut reader = SoftReader::open("GSE1234_family.soft")?;
+    /// let sample = reader.samples().next().expect("Should have sample")?;
+    ///
+    /// let batch = sample.to_record_batch()?;
+    /// println!("Sample {}: {} probes", sample.title, batch.num_rows());
+    ///
+    /// // Access the ID_REF column
+    /// let id_ref = batch.column(0);
+    /// println!("ID_REF column length: {}", id_ref.len());
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     ///
     /// # Errors
     ///
-    /// Returns an error if the conversion fails.
+    /// Returns an error if:
+    /// - No data table is available
+    /// - Numeric conversion fails (e.g., "abc" in VALUE column)
+    /// - Column count mismatch in data rows
     #[allow(clippy::too_many_lines)]
     pub fn to_record_batch(&self) -> Result<RecordBatch> {
         let Some(table) = &self.data_table else {
@@ -1918,11 +2335,35 @@ impl GsmRecord {
 }
 
 impl GplRecord {
-    /// Convert annotation to Arrow `RecordBatch`
+    /// Convert the platform annotation table to an Arrow `RecordBatch`
+    ///
+    /// The annotation table maps probe IDs to gene identifiers and other
+    /// biological annotations. Standard GEO column names (ID, ID_REF,
+    /// IDENTIFIER, etc.) are normalized to snake_case in the output schema.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use geo_soft_rs::SoftReader;
+    ///
+    /// let mut reader = SoftReader::open("GPL1234.soft")?;
+    /// let platform = reader.platforms().next().expect("Should have platform")?;
+    ///
+    /// let batch = platform.annotation_batch()?;
+    /// println!("Platform {}: {} probes", platform.title, batch.num_rows());
+    ///
+    /// // Access probe to gene mappings
+    /// for i in 0..batch.num_rows().min(5) {
+    ///     println!("Row {}: {:?}", i, batch.slice(i, 1));
+    /// }
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     ///
     /// # Errors
     ///
-    /// Returns an error if the conversion fails.
+    /// Returns an error if:
+    /// - No annotation table is available
+    /// - The annotation table is empty
     pub fn annotation_batch(&self) -> Result<RecordBatch> {
         let Some(table) = &self.annotation_table else {
             return Err(Error::InvalidFormat(

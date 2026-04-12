@@ -23,14 +23,21 @@ geo-soft-rs = "0.1"
 ```rust
 use geo_soft_rs::SoftReader;
 
-let reader = SoftReader::open("GSE65682_family.soft.gz")?;
+// Open a gzipped SOFT file
+let mut reader = SoftReader::open_gz("GSE65682_family.soft.gz")?;
+
+// Iterate over series records
 for record in reader.series() {
     let gse = record?;
-    println!("{}: {} samples", gse.accession, gse.samples.len());
+    println!("{}: {} samples", gse.local_id, gse.sample_ids.len());
 }
 
-// Get expression matrix as Arrow RecordBatch
-let batches = reader.expression_matrix("GSE65682")?;
+// Iterate over samples and convert to Arrow RecordBatch
+for record in reader.samples() {
+    let sample = record?;
+    let batch = sample.to_record_batch()?;
+    println!("Sample {}: {} probes", sample.title, batch.num_rows());
+}
 ```
 
 ## SOFT Format
