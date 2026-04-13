@@ -13,9 +13,6 @@ use crate::{Error, Result};
 // Constants for column indices
 const ID_REF_COL: usize = 0;
 const IDENTIFIER_COL: usize = 1;
-const DUAL_VALUE_COL: usize = 2;
-const DUAL_CH1_COL: usize = 3;
-const DUAL_CH2_COL: usize = 4;
 
 /// Parse a nullable float64 value with null sentinel handling
 ///
@@ -93,6 +90,7 @@ impl<R: BufRead> SoftReader<R> {
     ///
     /// ```rust
     /// use std::io::BufReader;
+    ///
     /// use geo_soft_rs::SoftReader;
     ///
     /// let data = b"^SAMPLE = GSM1\n!Sample_title = Test\n";
@@ -129,7 +127,11 @@ impl<R: BufRead> SoftReader<R> {
     ///
     /// for series in reader.series() {
     ///     let series = series?;
-    ///     println!("Series: {} - {} samples", series.title, series.sample_ids.len());
+    ///     println!(
+    ///         "Series: {} - {} samples",
+    ///         series.title,
+    ///         series.sample_ids.len()
+    ///     );
     /// }
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
@@ -152,8 +154,11 @@ impl<R: BufRead> SoftReader<R> {
     ///
     /// for sample in reader.samples() {
     ///     let sample = sample?;
-    ///     println!("Sample: {} ({} channels)", sample.title, sample.channel_count);
-    ///     
+    ///     println!(
+    ///         "Sample: {} ({} channels)",
+    ///         sample.title, sample.channel_count
+    ///     );
+    ///
     ///     // Convert to Arrow RecordBatch if data table exists
     ///     if let Ok(batch) = sample.to_record_batch() {
     ///         println!("  Data: {} rows", batch.num_rows());
@@ -204,8 +209,10 @@ impl<R: BufRead> SoftReader<R> {
     /// for dataset in reader.datasets() {
     ///     let dataset = dataset?;
     ///     println!("Dataset: {}", dataset.title);
-    ///     println!("  Features: {}, Samples: {}",
-    ///         dataset.feature_count, dataset.sample_count);
+    ///     println!(
+    ///         "  Features: {}, Samples: {}",
+    ///         dataset.feature_count, dataset.sample_count
+    ///     );
     ///     println!("  Subsets: {}", dataset.subsets.len());
     /// }
     /// # Ok::<(), Box<dyn std::error::Error>>(())
@@ -398,7 +405,7 @@ impl<R: BufRead> SoftReader<R> {
         };
 
         // Normalize line endings and trim whitespace
-        let line = line.trim_end_matches(['\r', '\n']).trim();
+        let line = line.trim_end_matches(['\r', '\n']);
 
         // Skip blank lines silently
         if line.is_empty() {
@@ -568,7 +575,7 @@ impl<R: BufRead> SoftReader<R> {
         };
 
         // Normalize line endings and trim whitespace
-        let line = line.trim_end_matches(['\r', '\n']).trim();
+        let line = line.trim_end_matches(['\r', '\n']);
 
         // Skip blank lines silently
         if line.is_empty() {
@@ -616,6 +623,12 @@ impl<R: BufRead> SoftReader<R> {
 
         if bytes_read == 0 {
             self.eof_reached = true;
+            // If there's a pending subset, add it to the dataset before returning
+            if let Some(subset) = self.current_subset.take() {
+                if let Some(dataset) = &mut self.current_dataset {
+                    dataset.subsets.push(subset);
+                }
+            }
             return Ok(self.current_dataset.take());
         }
 
@@ -630,7 +643,7 @@ impl<R: BufRead> SoftReader<R> {
         };
 
         // Normalize line endings and trim whitespace
-        let line = line.trim_end_matches(['\r', '\n']).trim();
+        let line = line.trim_end_matches(['\r', '\n']);
 
         // Skip blank lines silently
         if line.is_empty() {
@@ -690,7 +703,7 @@ impl<R: BufRead> SoftReader<R> {
         };
 
         // Normalize line endings and trim whitespace
-        let line = line.trim_end_matches(['\r', '\n']).trim();
+        let line = line.trim_end_matches(['\r', '\n']);
 
         // Skip blank lines silently
         if line.is_empty() {
@@ -784,9 +797,13 @@ impl<R: BufRead> SoftReader<R> {
     /// let mut reader = SoftReader::open("GSE1234_family.soft")?;
     /// let file = reader.read_all()?;
     ///
-    /// println!("Loaded {} series, {} samples, {} platforms, {} datasets",
-    ///     file.series.len(), file.samples.len(),
-    ///     file.platforms.len(), file.datasets.len());
+    /// println!(
+    ///     "Loaded {} series, {} samples, {} platforms, {} datasets",
+    ///     file.series.len(),
+    ///     file.samples.len(),
+    ///     file.platforms.len(),
+    ///     file.datasets.len()
+    /// );
     ///
     /// // Access any record by index
     /// if let Some(first_sample) = file.samples.first() {
@@ -835,7 +852,7 @@ impl<R: BufRead> SoftReader<R> {
         };
 
         // Normalize line endings and trim whitespace
-        let line = line.trim_end_matches(['\r', '\n']).trim();
+        let line = line.trim_end_matches(['\r', '\n']);
 
         // Skip blank lines silently in all states
         if line.is_empty() {
@@ -896,7 +913,7 @@ impl<R: BufRead> SoftReader<R> {
         }
     }
 
-    /// Handle lines when in idle state (returns SoftRecord for heterogeneous
+    /// Handle lines when in idle state (returns `SoftRecord` for heterogeneous
     /// iterator)
     fn handle_idle_state(&mut self, line: &str) -> Option<SoftRecord> {
         if let Some(accession) = line.strip_prefix("^SERIES = ") {
@@ -1002,6 +1019,10 @@ impl<R: BufRead> SoftReader<R> {
                 let current = self.current_dataset.take();
                 self.start_dataset(line.strip_prefix("^DATASET = ").unwrap().trim());
                 current
+            } else if line.strip_prefix("^SUBSET = ").is_some() {
+                // Subset belongs to this dataset - don't return yet
+                self.start_subset(line.strip_prefix("^SUBSET = ").unwrap().trim());
+                None
             } else {
                 // Other entity - finalize current dataset
                 self.state = ParseState::Idle;
@@ -1420,7 +1441,7 @@ impl<R: BufRead> SoftReader<R> {
                     _ => {
                         // Route all unrecognized attributes to metadata HashMap
                         // Strip the Sample_ prefix for cleaner keys
-                        let meta_key = key.strip_prefix("Sample_").unwrap_or(key);
+                        let meta_key = k.strip_prefix("Sample_").unwrap_or(k);
                         sample
                             .metadata
                             .entry(meta_key.to_string())
@@ -1631,8 +1652,10 @@ impl SoftReader<std::io::BufReader<flate2::read::GzDecoder<std::fs::File>>> {
 /// let mut reader = SoftReader::open("GDS6063.soft")?;
 /// let dataset = reader.datasets().next().expect("Should have dataset")?;
 ///
-/// println!("Dataset: {} with {} features and {} samples",
-///     dataset.title, dataset.feature_count, dataset.sample_count);
+/// println!(
+///     "Dataset: {} with {} features and {} samples",
+///     dataset.title, dataset.feature_count, dataset.sample_count
+/// );
 ///
 /// // Convert data table to Arrow RecordBatch
 /// let batch = dataset.to_record_batch()?;
@@ -1668,8 +1691,12 @@ pub struct GdsRecord {
 /// let dataset = reader.datasets().next().expect("Should have dataset")?;
 ///
 /// for subset in &dataset.subsets {
-///     println!("Subset {}: {} samples of type {}",
-///         subset.local_id, subset.sample_ids.len(), subset.subset_type);
+///     println!(
+///         "Subset {}: {} samples of type {}",
+///         subset.local_id,
+///         subset.sample_ids.len(),
+///         subset.subset_type
+///     );
 /// }
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
@@ -1695,7 +1722,11 @@ pub struct GdsSubset {
 /// let mut reader = SoftReader::open("GSE1234_family.soft")?;
 /// let series = reader.series().next().expect("Should have series")?;
 ///
-/// println!("Series: {} with {} samples", series.title, series.sample_ids.len());
+/// println!(
+///     "Series: {} with {} samples",
+///     series.title,
+///     series.sample_ids.len()
+/// );
 /// println!("Contributors: {:?}", series.contributor);
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
@@ -1727,7 +1758,10 @@ pub struct GseRecord {
 /// let mut reader = SoftReader::open("GSE1234_family.soft")?;
 /// let sample = reader.samples().next().expect("Should have sample")?;
 ///
-/// println!("Sample: {} on platform {}", sample.title, sample.platform_id);
+/// println!(
+///     "Sample: {} on platform {}",
+///     sample.title, sample.platform_id
+/// );
 ///
 /// // Convert data table to Arrow RecordBatch for analysis
 /// if let Ok(batch) = sample.to_record_batch() {
@@ -1767,7 +1801,10 @@ pub struct GsmRecord {
 /// let mut reader = SoftReader::open("GPL1234.soft")?;
 /// let platform = reader.platforms().next().expect("Should have platform")?;
 ///
-/// println!("Platform: {} - {}", platform.geo_accession, platform.title);
+/// println!(
+///     "Platform: {:?} - {}",
+///     platform.geo_accession, platform.title
+/// );
 /// println!("Technology: {}", platform.technology);
 /// println!("Organisms: {:?}", platform.organism);
 /// # Ok::<(), Box<dyn std::error::Error>>(())
@@ -1805,9 +1842,12 @@ pub struct GplRecord {
 /// let sample = reader.samples().next().expect("Should have sample")?;
 ///
 /// if let Some(table) = &sample.data_table {
-///     println!("Table has {} columns and {} rows",
-///         table.columns.len(), table.rows.len());
-///     
+///     println!(
+///         "Table has {} columns and {} rows",
+///         table.columns.len(),
+///         table.rows.len()
+///     );
+///
 ///     // Access column names
 ///     for col in &table.columns {
 ///         println!("Column: {} - {}", col.name, col.description);
@@ -1864,8 +1904,12 @@ pub enum SoftRecord {
 /// let mut reader = SoftReader::open("GSE1234_family.soft")?;
 /// let file = reader.read_all()?;
 ///
-/// println!("Parsed {} series, {} samples, {} platforms",
-///     file.series.len(), file.samples.len(), file.platforms.len());
+/// println!(
+///     "Parsed {} series, {} samples, {} platforms",
+///     file.series.len(),
+///     file.samples.len(),
+///     file.platforms.len()
+/// );
 ///
 /// // Access all samples
 /// for sample in &file.samples {
@@ -1908,7 +1952,7 @@ impl GdsRecord {
     ///
     /// The resulting `RecordBatch` contains columns for feature identifiers
     /// and sample expression values. This enables zero-copy interoperability
-    /// with data science tools like Polars, Pandas (via PyArrow), and others.
+    /// with data science tools like Polars, Pandas (via `PyArrow`), and others.
     ///
     /// # Example
     ///
@@ -1920,7 +1964,11 @@ impl GdsRecord {
     ///
     /// let batch = dataset.to_record_batch()?;
     /// println!("Batch schema: {:?}", batch.schema());
-    /// println!("Rows: {}, Columns: {}", batch.num_rows(), batch.num_columns());
+    /// println!(
+    ///     "Rows: {}, Columns: {}",
+    ///     batch.num_rows(),
+    ///     batch.num_columns()
+    /// );
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     ///
@@ -2178,26 +2226,34 @@ impl GsmRecord {
             ));
         }
 
-        // Get column names (skip the first two which are ID_REF and IDENTIFIER)
+        // Determine if column 1 is IDENTIFIER or a value column
+        // Check by name - IDENTIFIER column should be explicitly named
+        let has_identifier_col = table
+            .columns
+            .get(1)
+            .is_some_and(|c| c.name.eq_ignore_ascii_case("IDENTIFIER"));
+
+        // Get value column names (skip ID_REF and optionally IDENTIFIER)
+        let skip_count = if has_identifier_col { 2 } else { 1 };
         let value_columns: Vec<&str> = table
             .columns
             .iter()
-            .skip(2)
+            .skip(skip_count)
             .map(|col| col.name.as_str())
             .collect();
 
         // Check if this is dual-channel (log ratio + ch1/ch2 values) or single-channel
-        // Dual-channel pattern: VALUE, CH1, CH2 (case-insensitive)
+        // Dual-channel pattern: VALUE, ch1_value, ch2_value (case-insensitive)
         let is_dual_channel = value_columns.len() >= 3
             && value_columns[0].to_ascii_uppercase().contains("VALUE")
             && value_columns[1].to_ascii_uppercase().contains("CH1")
             && value_columns[2].to_ascii_uppercase().contains("CH2");
 
         // Build schema
-        let mut fields = vec![
-            Field::new("id_ref", DataType::Utf8, false),
-            Field::new("identifier", DataType::Utf8, true),
-        ];
+        let mut fields = vec![Field::new("id_ref", DataType::Utf8, false)];
+        if has_identifier_col {
+            fields.push(Field::new("identifier", DataType::Utf8, true));
+        }
 
         if is_dual_channel {
             fields.push(Field::new("value", DataType::Float64, true)); // log ratio
@@ -2242,45 +2298,50 @@ impl GsmRecord {
         let mut auxiliary_arrays: Vec<Vec<String>> = Vec::new();
 
         // Initialize auxiliary arrays
-        for _ in table.columns.iter().skip(
-            2 + if is_dual_channel {
+        let aux_skip_count = skip_count
+            + if is_dual_channel {
                 3
             } else {
                 value_columns.len()
-            },
-        ) {
+            };
+        for _ in table.columns.iter().skip(aux_skip_count) {
             auxiliary_arrays.push(Vec::new());
         }
 
         // Process rows
         for row in &table.rows {
-            if row.len() < 2 {
+            if row.len() < skip_count {
                 continue;
             }
 
             id_refs.push(row[ID_REF_COL].clone());
-            identifiers.push(row.get(IDENTIFIER_COL).cloned());
+            if has_identifier_col {
+                identifiers.push(row.get(IDENTIFIER_COL).cloned());
+            }
 
             if is_dual_channel {
                 // Parse value columns: log ratio, ch1, ch2
-                for (i, col_idx) in [DUAL_VALUE_COL, DUAL_CH1_COL, DUAL_CH2_COL]
-                    .iter()
-                    .enumerate()
-                {
+                // Use dynamic indices based on whether IDENTIFIER column exists
+                let dual_indices = [
+                    skip_count,     // VALUE/log ratio
+                    skip_count + 1, // CH1
+                    skip_count + 2, // CH2
+                ];
+                for (i, col_idx) in dual_indices.iter().enumerate() {
                     let value = row.get(*col_idx).cloned().unwrap_or_default();
                     let parsed = parse_f64_nullable(&value)?;
                     value_arrays[i].push(parsed);
                 }
 
                 // Handle auxiliary columns
-                for (i, aux_col_idx) in (DUAL_CH2_COL + 1..row.len()).enumerate() {
+                for (i, aux_col_idx) in (skip_count + 3..row.len()).enumerate() {
                     if let Some(aux_array) = auxiliary_arrays.get_mut(i) {
                         aux_array.push(row[aux_col_idx].clone());
                     }
                 }
             } else {
                 // Single channel - parse each value column
-                for (i, col_idx) in (2..row.len()).enumerate() {
+                for (i, col_idx) in (skip_count..row.len()).enumerate() {
                     if i < value_arrays.len() {
                         let value = row.get(col_idx).cloned().unwrap_or_default();
                         let parsed = parse_f64_nullable(&value)?;
@@ -2297,10 +2358,10 @@ impl GsmRecord {
         }
 
         // Create Arrow arrays
-        let mut arrays: Vec<ArrayRef> = vec![
-            Arc::new(StringArray::from(id_refs)),
-            Arc::new(StringArray::from(identifiers)),
-        ];
+        let mut arrays: Vec<ArrayRef> = vec![Arc::new(StringArray::from(id_refs))];
+        if has_identifier_col {
+            arrays.push(Arc::new(StringArray::from(identifiers)));
+        }
 
         // Add value arrays
         for values in value_arrays {
@@ -2338,8 +2399,8 @@ impl GplRecord {
     /// Convert the platform annotation table to an Arrow `RecordBatch`
     ///
     /// The annotation table maps probe IDs to gene identifiers and other
-    /// biological annotations. Standard GEO column names (ID, ID_REF,
-    /// IDENTIFIER, etc.) are normalized to snake_case in the output schema.
+    /// biological annotations. Standard GEO column names (`ID`, `ID_REF`,
+    /// `IDENTIFIER`, etc.) are normalized to `snake_case` in the output schema.
     ///
     /// # Example
     ///

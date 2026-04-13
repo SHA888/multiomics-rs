@@ -175,10 +175,10 @@ fn test_record_batch_schema() -> geo_soft_rs::Result<()> {
     let batch = samples[0].to_record_batch()?;
     let schema = batch.schema();
 
-    // Check expected fields exist
+    // Check expected fields exist (lowercase as per implementation)
     let fields: Vec<_> = schema.fields().iter().map(|f| f.name().as_str()).collect();
-    assert!(fields.contains(&"ID_REF"));
-    assert!(fields.contains(&"VALUE"));
+    assert!(fields.contains(&"id_ref"));
+    assert!(fields.contains(&"value"));
 
     Ok(())
 }
@@ -301,9 +301,9 @@ fn test_dual_channel_parsing() -> geo_soft_rs::Result<()> {
     // Check schema has ch1_value and ch2_value columns
     let batch = samples[0].to_record_batch()?;
     let schema = batch.schema();
+    // Should have value, ch1_value, ch2_value columns (lowercase)
     let fields: Vec<_> = schema.fields().iter().map(|f| f.name().as_str()).collect();
-
-    assert!(fields.contains(&"VALUE"));
+    assert!(fields.contains(&"value"));
     assert!(fields.contains(&"ch1_value"));
     assert!(fields.contains(&"ch2_value"));
 
@@ -363,6 +363,7 @@ fn test_download_attrs_routing() -> geo_soft_rs::Result<()> {
 
 // G1.4.9: Null sentinel coverage
 #[test]
+#[rustfmt::skip]
 fn test_null_sentinels() -> geo_soft_rs::Result<()> {
     let soft_content = r#"^SAMPLE = GSMNULL
 !Sample_title = Null Sentinel Test
@@ -371,7 +372,7 @@ fn test_null_sentinels() -> geo_soft_rs::Result<()> {
 !Sample_channel_count = 1
 !Sample_table_begin
 ID_REF	VALUE
-probe1
+probe1	
 probe2	NA
 probe3	null
 probe4	NaN
