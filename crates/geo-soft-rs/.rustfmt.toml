@@ -1,0 +1,5 @@
+# Ignore fixture files to preserve TSV formatting
+trim_trailing_newline = true
+
+# Don't format fixture files which may contain intentional whitespace
+ignore = ["tests/fixtures/**/*"]

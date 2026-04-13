@@ -1,0 +1,14 @@
+^SAMPLE = GSMNULL
+!Sample_title = Null Sentinel Test
+!Sample_geo_accession = GSMNULL
+!Sample_platform_id = GPLTEST
+!Sample_channel_count = 1
+!Sample_table_begin
+ID_REF	VALUE
+probe1	
+probe2	NA
+probe3	null
+probe4	NaN
+probe5	none
+probe6	1.5
+!Sample_table_end

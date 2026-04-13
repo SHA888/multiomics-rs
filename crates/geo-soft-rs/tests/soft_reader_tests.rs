@@ -363,23 +363,8 @@ fn test_download_attrs_routing() -> geo_soft_rs::Result<()> {
 
 // G1.4.9: Null sentinel coverage
 #[test]
-#[rustfmt::skip]
 fn test_null_sentinels() -> geo_soft_rs::Result<()> {
-    let soft_content = r#"^SAMPLE = GSMNULL
-!Sample_title = Null Sentinel Test
-!Sample_geo_accession = GSMNULL
-!Sample_platform_id = GPLTEST
-!Sample_channel_count = 1
-!Sample_table_begin
-ID_REF	VALUE
-probe1	
-probe2	NA
-probe3	null
-probe4	NaN
-probe5	none
-probe6	1.5
-!Sample_table_end
-"#;
+    let soft_content = include_str!("fixtures/null_sentinels.soft");
 
     let mut temp_file = std::env::temp_dir();
     temp_file.push("test_nulls.soft");

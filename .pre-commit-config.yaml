@@ -3,7 +3,9 @@ repos:
     rev: v4.5.0
     hooks:
       - id: trailing-whitespace
+        exclude: 'tests/fixtures/.*\.soft$'
       - id: end-of-file-fixer
+        exclude: 'tests/fixtures/.*\.soft$'
       - id: check-yaml
       - id: check-toml
       - id: check-merge-conflict
