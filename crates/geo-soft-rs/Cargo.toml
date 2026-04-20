@@ -7,7 +7,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/SHA888/multiomics-rs"
 authors = ["Kresna Sucandra"]
 categories = ["science", "parser-implementations"]
-keywords = ["genomics", "transcriptomics", "arrow", "bioinformatics", "omics", "geo", "soft"]
+keywords = ["geo", "soft", "genomics", "bioinformatics", "arrow"]
 description = "Parser for NCBI GEO SOFT format → Arrow RecordBatches"
 
 [dependencies]
