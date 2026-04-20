@@ -427,7 +427,7 @@ impl<R: BufRead> SoftReader<R> {
                 Ok(None)
             }
             ParseState::InSample => {
-                if let Some(record) = self.handle_sample_state(line)? {
+                if let Some(record) = self.handle_sample_state(line) {
                     // If transitioned to Idle (cross-entity), start new entity before returning
                     if self.state == ParseState::Idle {
                         self.handle_entity_start(line);
@@ -670,8 +670,9 @@ impl<R: BufRead> SoftReader<R> {
             }
             ParseState::InDatasetTable => self.handle_dataset_table_state(line).map(|_| None),
             ParseState::InSubset => {
-                self.handle_subset_state(line);
-                Ok(None)
+                // handle_subset_state may return a completed dataset
+                // when transitioning to a non-subset entity
+                Ok(self.handle_subset_state(line))
             }
             _ => {
                 // Not in dataset-related state, track state changes
@@ -743,7 +744,7 @@ impl<R: BufRead> SoftReader<R> {
                 Ok(None)
             }
             ParseState::InSample => {
-                if let Some(record) = self.handle_sample_state(line)? {
+                if let Some(record) = self.handle_sample_state(line) {
                     if self.state == ParseState::Idle {
                         let _ = self.handle_idle_state(line);
                     }
@@ -990,23 +991,23 @@ impl<R: BufRead> SoftReader<R> {
     }
 
     /// Handle lines when in sample state
-    fn handle_sample_state(&mut self, line: &str) -> Result<Option<GsmRecord>> {
+    fn handle_sample_state(&mut self, line: &str) -> Option<GsmRecord> {
         if line.starts_with('^') {
             // Start of new section - emit current sample if any
             if line.strip_prefix("^SAMPLE = ").is_some() {
                 // New sample - return current one and start new
                 let current = self.current_sample.take();
                 self.start_sample(line.strip_prefix("^SAMPLE = ").unwrap().trim());
-                Ok(current)
+                current
             } else {
                 // Other entity - return current sample
                 self.state = ParseState::Idle;
-                Ok(self.current_sample.take())
+                self.current_sample.take()
             }
         } else if let Some(key_value) = line.strip_prefix('!') {
             self.parse_sample_metadata(key_value)
         } else {
-            Ok(None)
+            None
         }
     }
 
@@ -1050,9 +1051,10 @@ impl<R: BufRead> SoftReader<R> {
                 self.start_subset(line.strip_prefix("^SUBSET = ").unwrap().trim());
                 None
             } else {
-                // Other entity - finalize current subset (already added above) and transition
+                // Other entity - finalize current subset (already added above),
+                // return dataset, and transition to Idle
                 self.state = ParseState::Idle;
-                None
+                self.current_dataset.take()
             }
         } else if let Some(key_value) = line.strip_prefix('!') {
             self.parse_subset_metadata(key_value)
@@ -1367,7 +1369,33 @@ impl<R: BufRead> SoftReader<R> {
                 match k {
                     "Platform_title" => platform.title = value.to_string(),
                     "Platform_technology" => platform.technology = value.to_string(),
-                    _ => {} // Handle other platform metadata as needed
+                    "Platform_distribution" => platform.distribution = value.to_string(),
+                    "Platform_geo_accession" => platform.geo_accession = Some(value.to_string()),
+                    "Platform_manufacturer" => platform.manufacturer = value.to_string(),
+                    "Platform_organism" => platform.organism.push(value.to_string()),
+                    key if key.starts_with("Platform_manufacture_protocol") => {
+                        platform.manufacture_protocol.push(value.to_string());
+                    }
+                    key if key.starts_with("Platform_description") => {
+                        platform.description.push(value.to_string());
+                    }
+                    key if key.starts_with("Platform_contributor") => {
+                        platform.contributor.push(value.to_string());
+                    }
+                    key if key.starts_with("Platform_pubmed_id") => {
+                        if let Ok(id) = value.parse::<u32>() {
+                            platform.pubmed_id.push(id);
+                        }
+                    }
+                    _ => {
+                        // Route unrecognized attributes to metadata HashMap
+                        let meta_key = k.strip_prefix("Platform_").unwrap_or(k);
+                        platform
+                            .metadata
+                            .entry(meta_key.to_string())
+                            .or_insert_with(Vec::new)
+                            .push(value.to_string());
+                    }
                 }
             }
         }
@@ -1375,7 +1403,8 @@ impl<R: BufRead> SoftReader<R> {
     }
 
     /// Parse sample metadata
-    fn parse_sample_metadata(&mut self, key_value: &str) -> Result<Option<GsmRecord>> {
+    #[allow(clippy::too_many_lines)]
+    fn parse_sample_metadata(&mut self, key_value: &str) -> Option<GsmRecord> {
         let key = key_value.trim();
 
         // Handle special cases without = first
@@ -1385,7 +1414,7 @@ impl<R: BufRead> SoftReader<R> {
                 columns: Vec::new(),
                 rows: Vec::new(),
             });
-            return Ok(None);
+            return None;
         }
 
         if let Some((k, value)) = key_value.split_once(" = ") {
@@ -1402,21 +1431,16 @@ impl<R: BufRead> SoftReader<R> {
                             sample.channel_count = count;
                         }
                     }
-                    key if key.starts_with("Sample_characteristics_") => {
-                        // Extract channel and characteristics type
-                        if let Some(char_key) = key.strip_prefix("Sample_characteristics_") {
-                            // Parse channel number and characteristic type
-                            if let Some((channel_str, char_type)) = char_key.split_once("_ch") {
-                                // This is channel-specific: characteristics_ch1_disease
-                                if let Ok(channel_num) = channel_str.parse::<usize>() {
-                                    // Bounds check: channel count must fit in u8 (max 255)
-                                    if channel_num > 254 {
-                                        return Err(Error::InvalidFormat(format!(
-                                            "Channel number {channel_num} exceeds maximum of 255"
-                                        )));
-                                    }
+                    key if key.starts_with("Sample_characteristics_ch") => {
+                        // Parse channel-specific characteristics: Sample_characteristics_ch1
+                        if let Some(channel_str) = key.strip_prefix("Sample_characteristics_ch") {
+                            // Parse channel number (e.g., "1", "2" from "ch1", "ch2")
+                            if let Some((channel_num_str, _)) = channel_str.split_once('_') {
+                                // Has suffix like _time, _disease after channel number
+                                if let Ok(channel_one_indexed) = channel_num_str.parse::<usize>() {
+                                    let channel_num = channel_one_indexed.saturating_sub(1); // Convert 1-indexed to 0-indexed
                                     // Update channel count if needed
-                                    if let Ok(new_count) = u8::try_from(channel_num + 1) {
+                                    if let Ok(new_count) = u8::try_from(channel_one_indexed) {
                                         if new_count > sample.channel_count {
                                             sample.channel_count = new_count;
                                         }
@@ -1425,18 +1449,88 @@ impl<R: BufRead> SoftReader<R> {
                                     while sample.characteristics.len() <= channel_num {
                                         sample.characteristics.push(HashMap::new());
                                     }
+                                    // Parse value as "Tag: Value" format
+                                    let (tag, val) = value
+                                        .split_once(':')
+                                        .map_or(("", value), |(t, v)| (t.trim(), v.trim()));
                                     sample.characteristics[channel_num]
-                                        .insert(char_type.to_string(), value.to_string());
+                                        .insert(tag.to_string(), val.to_string());
                                 }
                             } else {
-                                // Single channel - add to channel 0
-                                if sample.characteristics.is_empty() {
-                                    sample.characteristics.push(HashMap::new());
+                                // Just "ch1" without suffix
+                                if let Ok(channel_one_indexed) = channel_str.parse::<usize>() {
+                                    let channel_num = channel_one_indexed.saturating_sub(1);
+                                    if let Ok(new_count) = u8::try_from(channel_one_indexed) {
+                                        if new_count > sample.channel_count {
+                                            sample.channel_count = new_count;
+                                        }
+                                    }
+                                    while sample.characteristics.len() <= channel_num {
+                                        sample.characteristics.push(HashMap::new());
+                                    }
+                                    // Parse value as "Tag: Value" format
+                                    let (tag, val) = value
+                                        .split_once(':')
+                                        .map_or(("", value), |(t, v)| (t.trim(), v.trim()));
+                                    sample.characteristics[channel_num]
+                                        .insert(tag.to_string(), val.to_string());
                                 }
-                                sample.characteristics[0]
-                                    .insert(char_key.to_string(), value.to_string());
                             }
                         }
+                    }
+                    key if key.starts_with("Sample_source_name_ch") => {
+                        // Per-channel source name (e.g., Sample_source_name_ch1)
+                        if let Some(ch_str) = key.strip_prefix("Sample_source_name_ch") {
+                            if let Ok(ch_one_indexed) = ch_str.parse::<usize>() {
+                                let ch_idx = ch_one_indexed.saturating_sub(1);
+                                while sample.source_name.len() <= ch_idx {
+                                    sample.source_name.push(String::new());
+                                }
+                                sample.source_name[ch_idx] = value.to_string();
+                            }
+                        }
+                    }
+                    key if key.starts_with("Sample_organism_ch") => {
+                        // Per-channel organism (e.g., Sample_organism_ch1)
+                        if let Some(ch_str) = key.strip_prefix("Sample_organism_ch") {
+                            if let Ok(ch_one_indexed) = ch_str.parse::<usize>() {
+                                let ch_idx = ch_one_indexed.saturating_sub(1);
+                                while sample.organism.len() <= ch_idx {
+                                    sample.organism.push(Vec::new());
+                                }
+                                sample.organism[ch_idx].push(value.to_string());
+                            }
+                        }
+                    }
+                    key if key.starts_with("Sample_molecule_ch") => {
+                        // Per-channel molecule (e.g., Sample_molecule_ch1)
+                        if let Some(ch_str) = key.strip_prefix("Sample_molecule_ch") {
+                            if let Ok(ch_one_indexed) = ch_str.parse::<usize>() {
+                                let ch_idx = ch_one_indexed.saturating_sub(1);
+                                while sample.molecule.len() <= ch_idx {
+                                    sample.molecule.push(String::new());
+                                }
+                                sample.molecule[ch_idx] = value.to_string();
+                            }
+                        }
+                    }
+                    key if key.starts_with("Sample_label_ch") => {
+                        // Per-channel label (e.g., Sample_label_ch1)
+                        if let Some(ch_str) = key.strip_prefix("Sample_label_ch") {
+                            if let Ok(ch_one_indexed) = ch_str.parse::<usize>() {
+                                let ch_idx = ch_one_indexed.saturating_sub(1);
+                                while sample.label.len() <= ch_idx {
+                                    sample.label.push(String::new());
+                                }
+                                sample.label[ch_idx] = value.to_string();
+                            }
+                        }
+                    }
+                    "Sample_data_processing" => {
+                        sample.data_processing.push(value.to_string());
+                    }
+                    "Sample_description" => {
+                        sample.description.push(value.to_string());
                     }
                     _ => {
                         // Route all unrecognized attributes to metadata HashMap
@@ -1451,7 +1545,7 @@ impl<R: BufRead> SoftReader<R> {
                 }
             }
         }
-        Ok(None)
+        None
     }
 
     /// Parse dataset metadata
@@ -1490,9 +1584,11 @@ impl<R: BufRead> SoftReader<R> {
                         }
                     }
                     _ => {
+                        // Strip the dataset_ prefix for cleaner keys (consistent with Series/Sample)
+                        let meta_key = k.strip_prefix("dataset_").unwrap_or(k);
                         dataset
                             .metadata
-                            .entry(key.to_string())
+                            .entry(meta_key.to_string())
                             .or_insert_with(Vec::new)
                             .push(value.to_string());
                     }
@@ -1994,12 +2090,18 @@ impl GdsRecord {
             return Err(Error::InvalidFormat("Empty data table".to_string()));
         }
 
-        // Extract sample IDs from column names (skip first 2 columns: ID_REF,
-        // IDENTIFIER)
+        // Determine if column 1 is IDENTIFIER or a value column (dynamic detection)
+        let has_identifier_col = table
+            .columns
+            .get(1)
+            .is_some_and(|c| c.name.eq_ignore_ascii_case("IDENTIFIER"));
+
+        // Get value column names (skip ID_REF and optionally IDENTIFIER)
+        let skip_count = if has_identifier_col { 2 } else { 1 };
         let sample_columns: Vec<&str> = table
             .columns
             .iter()
-            .skip(2)
+            .skip(skip_count)
             .map(|col| col.name.as_str())
             .collect();
 
@@ -2009,8 +2111,10 @@ impl GdsRecord {
         // ID_REF column
         fields.push(Field::new("id_ref", DataType::Utf8, false));
 
-        // IDENTIFIER column
-        fields.push(Field::new("identifier", DataType::Utf8, true));
+        // IDENTIFIER column (optional)
+        if has_identifier_col {
+            fields.push(Field::new("identifier", DataType::Utf8, true));
+        }
 
         // Sample columns (Float64, nullable)
         for sample_id in &sample_columns {
@@ -2033,28 +2137,31 @@ impl GdsRecord {
             .collect();
         arrays.push(Arc::new(StringArray::from(id_ref_values)));
 
-        // IDENTIFIER array
-        let identifier_values: Vec<Option<&str>> = table
-            .rows
-            .iter()
-            .map(|row| {
-                row.get(1)
-                    .and_then(|s| if s.is_empty() { None } else { Some(s.as_str()) })
-            })
-            .collect();
-        arrays.push(Arc::new(StringArray::from(identifier_values)));
-
-        // Sample value arrays
-        for col_idx in 2..table.columns.len() {
-            let values: Vec<Option<f64>> = table
+        // IDENTIFIER array (optional)
+        if has_identifier_col {
+            let identifier_values: Vec<Option<&str>> = table
                 .rows
                 .iter()
                 .map(|row| {
-                    row.get(col_idx)
-                        .filter(|s| !s.is_empty())
-                        .and_then(|s| Self::parse_f64_nullable(s))
+                    row.get(1)
+                        .and_then(|s| if s.is_empty() { None } else { Some(s.as_str()) })
                 })
                 .collect();
+            arrays.push(Arc::new(StringArray::from(identifier_values)));
+        }
+
+        // Sample value arrays
+        for col_idx in skip_count..table.columns.len() {
+            let values: Vec<Option<f64>> = table
+                .rows
+                .iter()
+                .map(|row| -> Result<Option<f64>> {
+                    match row.get(col_idx).filter(|s| !s.is_empty()) {
+                        Some(s) => Self::parse_f64_nullable(s),
+                        None => Ok(None),
+                    }
+                })
+                .collect::<Result<Vec<_>>>()?;
             arrays.push(Arc::new(Float64Array::from(values)));
         }
 
@@ -2065,12 +2172,11 @@ impl GdsRecord {
     }
 
     /// Parse nullable float64 value with null sentinel handling
-    fn parse_f64_nullable(s: &str) -> Option<f64> {
-        match s.trim() {
-            "" | "null" | "NULL" | "na" | "NA" | "n/a" | "N/A" | "nan" | "NaN" | "none"
-            | "NONE" => None,
-            _ => s.trim().parse::<f64>().ok(),
-        }
+    ///
+    /// Uses the module-level `parse_f64_nullable` which properly
+    /// returns `Err` for malformed non-null values per G1.2.4 spec.
+    fn parse_f64_nullable(s: &str) -> Result<Option<f64>> {
+        crate::parser::parse_f64_nullable(s)
     }
 }
 
@@ -2081,8 +2187,11 @@ impl GseRecord {
     ///
     /// Returns an error if the conversion fails.
     pub fn to_record_batch(&self) -> Result<RecordBatch> {
-        // TODO: Implement Arrow conversion
-        todo!("Implement Arrow conversion")
+        // Series records contain metadata only, not tabular data.
+        // Use metadata_batch() for series metadata as key-value rows.
+        Err(Error::InvalidFormat(
+            "Series records do not contain tabular data. Use metadata_batch() instead.".to_string(),
+        ))
     }
 
     /// Convert metadata to Arrow `RecordBatch` with attribute-value rows
@@ -2333,14 +2442,21 @@ impl GsmRecord {
                     value_arrays[i].push(parsed);
                 }
 
-                // Handle auxiliary columns
+                // Handle auxiliary columns - pad with empty strings for missing cells
+                let mut aux_filled = 0;
                 for (i, aux_col_idx) in (skip_count + 3..row.len()).enumerate() {
                     if let Some(aux_array) = auxiliary_arrays.get_mut(i) {
                         aux_array.push(row[aux_col_idx].clone());
+                        aux_filled += 1;
                     }
+                }
+                // Pad remaining auxiliary arrays with empty strings
+                for aux_array in auxiliary_arrays.iter_mut().skip(aux_filled) {
+                    aux_array.push(String::new());
                 }
             } else {
                 // Single channel - parse each value column
+                let mut aux_filled = 0;
                 for (i, col_idx) in (skip_count..row.len()).enumerate() {
                     if i < value_arrays.len() {
                         let value = row.get(col_idx).cloned().unwrap_or_default();
@@ -2351,7 +2467,16 @@ impl GsmRecord {
                         let aux_index = i.saturating_sub(value_arrays.len());
                         if let Some(aux_array) = auxiliary_arrays.get_mut(aux_index) {
                             aux_array.push(row[col_idx].clone());
+                            aux_filled = aux_index + 1;
                         }
+                    }
+                }
+                // Ensure all auxiliary arrays have an entry for this row
+                // If row was shorter than expected, pad with empty strings
+                let expected_aux_count = auxiliary_arrays.len();
+                if aux_filled < expected_aux_count {
+                    for aux_array in auxiliary_arrays.iter_mut().skip(aux_filled) {
+                        aux_array.push(String::new());
                     }
                 }
             }
