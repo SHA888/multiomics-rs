@@ -30,6 +30,18 @@ database format and emits Arrow RecordBatches — nothing more.
 | [`dgidb-rs`](crates/dgidb-rs) | Drug-gene interactions | Pharmacology | DGIdb | TSV | 🚧 Pre-release |
 | [`uniprot-rs`](crates/uniprot-rs) | Protein annotation | Proteomics | UniProt Swiss-Prot | TSV / XML | 🚧 Pre-release |
 | [`reactome-rs`](crates/reactome-rs) | Biological pathways | Systems biology | Reactome | TSV | 🚧 Pre-release |
+| [`hgnc-rs`](crates/hgnc-rs) | Gene symbol authority | Genomics | HGNC | TSV / JSON | 📋 Planned (v0.3, Wave 1) |
+| [`refseq-rs`](crates/refseq-rs) | Transcript / protein refs | Genomics | NCBI RefSeq | TSV | 📋 Planned (v0.3, Wave 2) |
+| [`pfam-rs`](crates/pfam-rs) | Protein families & domains | Proteomics | Pfam (InterPro) | TSV | 📋 Planned (v0.3, Wave 2) |
+| [`intact-rs`](crates/intact-rs) | Curated molecular interactions | Proteomics | IntAct / MINT / PSI-MI | PSI-MITAB | 📋 Planned (v0.3, Wave 2) |
+| [`corum-rs`](crates/corum-rs) | Protein complexes | Proteomics | CORUM | TSV / XML | 📋 Planned (v0.3, Wave 2) |
+| [`signor-rs`](crates/signor-rs) | Signed signaling networks | Proteomics | SIGNOR | TSV | 📋 Planned (v0.3, Wave 2) |
+| [`hmdb-rs`](crates/hmdb-rs) | Human metabolome | Metabolomics | HMDB | XML / TSV | 📋 Planned (v0.3, Wave 3) |
+| [`gwas-catalog-rs`](crates/gwas-catalog-rs) | Variant-trait associations | Genomics | NHGRI-EBI GWAS Catalog | TSV | 📋 Planned (v0.3, Wave 3) |
+| [`hpa-rs`](crates/hpa-rs) | Tissue / cell-type protein levels | Proteomics | Human Protein Atlas | TSV | 📋 Planned (v0.3, Wave 3) |
+| [`sider-rs`](crates/sider-rs) | Drug side-effect mappings | Pharmacology | SIDER | TSV | 📋 Planned (v0.3, Wave 3) |
+| [`stitch-rs`](crates/stitch-rs) | Chemical-protein interactions | Pharmacology | STITCH | TSV | 📋 Planned (v0.3, Wave 3) |
+| [`cgi-rs`](crates/cgi-rs) | Cancer variant interpretation | Cancer genomics | Cancer Genome Interpreter | TSV | 📋 Planned (v0.3, Wave 3) |
 
 ## Why Rust?
 
@@ -120,21 +132,40 @@ let batch = reader.tissue_expression("ENSG00000134045")?;  // IL-6
 ## Relationship to other repositories
 
 ```
-clinical-rs        clinical records (MIMIC, ICD codes, task windowing)
-                   github.com/SHA888/clinical-rs
+clinical-rs              clinical records (MIMIC, ICD codes, task windowing)
+                         github.com/SHA888/clinical-rs
 
-multiomics-rs      molecular reference databases (this repo)
-                   github.com/SHA888/multiomics-rs
+multiomics-rs            molecular reference databases (this repo)
+                         openly licensed, no registration required
+                         github.com/SHA888/multiomics-rs
 
-oxbow              NGS sequence formats (BAM, VCF, BED, BigWig)
-                   github.com/abdenlab/oxbow  [third-party, complementary]
+multiomics-rs-licensed   molecular reference databases requiring academic
+                         or commercial license agreements (DrugBank,
+                         PhosphoSitePlus, OncoKB, DisGeNet) — parsers
+                         only, data access is the user's responsibility
+                         github.com/SHA888/multiomics-rs-licensed
 
-noodles            pure Rust BAM/CRAM/VCF readers
-                   github.com/zaeleus/noodles  [third-party, complementary]
+biomedref-rs             biomedical reference databases outside strict
+                         molecular omics: literature-mining associations,
+                         environmental exposure, food composition
+                         github.com/SHA888/biomedref-rs
+
+oxbow                    NGS sequence formats (BAM, VCF, BED, BigWig)
+                         github.com/abdenlab/oxbow  [third-party, complementary]
+
+noodles                  pure Rust BAM/CRAM/VCF readers
+                         github.com/zaeleus/noodles  [third-party, complementary]
 ```
 
-Neither `clinical-rs` nor `multiomics-rs` depends on the other.
-Applications (such as Biokhor) depend on both.
+None of the four workspaces (`clinical-rs`, `multiomics-rs`, `multiomics-rs-licensed`,
+`biomedref-rs`) depends on any other. All four emit Apache Arrow RecordBatches as the
+common contract. Consuming applications declare dependencies on whichever workspaces
+they need. The boundary between `multiomics-rs` and `multiomics-rs-licensed` is
+license terms: if a data source requires a signed agreement, registration beyond
+institutional email, or prohibits redistribution, its parser lives in
+`multiomics-rs-licensed`. The boundary between `multiomics-rs` and `biomedref-rs`
+is subject matter: molecular omics sources stay here; non-molecular biomedical
+references (text-mining, exposome, food) go to `biomedref-rs`.
 
 ## Requirements
 
