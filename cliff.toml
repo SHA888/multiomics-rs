@@ -26,13 +26,6 @@ body = """
                 {{ link }}{% endfor %}{% endif %}
     {% endfor %}
 {% endfor %}
-
-{% if github.contributors -%}
-    ### Contributors
-    {% for contributor in github.contributors %}
-        - {{ contributor.name }} ({{ contributor.contributions }} contributions)
-    {% endfor %}
-{% endif -%}
 """
 trim = true
 
