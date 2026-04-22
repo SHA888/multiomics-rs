@@ -455,21 +455,21 @@ pub struct SoftFile {
 ## transcriptomic-rs — v0.1.0
 > Depends on: geo-soft-rs. Ships in Wave 1 immediately after geo-soft-rs indexes.
 
-### [ ] T1.1 Expression matrix assembly
+### [x] T1.1 Expression matrix assembly
 
-- [ ] T1.1.1 `ExpressionMatrix` struct:
+- [x] T1.1.1 `ExpressionMatrix` struct:
   - `genes: Vec<String>` (gene symbols, rows)
   - `samples: Vec<String>` (GSM accessions, columns)
   - `values: RecordBatch` (Float64 columns — one per sample)
-- [ ] T1.1.2 `MatrixBuilder::from_soft(reader: SoftReader) -> ExpressionMatrix`
+- [x] T1.1.2 `MatrixBuilder::from_soft(reader: SoftReader) -> ExpressionMatrix`
   - join GSM data tables on probe_id
   - map probe_id → gene_symbol via GPL annotation
   - handle multi-probe-per-gene: mean aggregation (configurable)
   - handle missing values: null (not zero)
-- [ ] T1.1.3 `SampleMetadata` struct → RecordBatch:
+- [x] T1.1.3 `SampleMetadata` struct → RecordBatch:
   - columns: gsm_accession, title, characteristic_key, characteristic_value
   - one row per characteristic per sample
-- [ ] T1.1.4 `PlatformAnnotation` struct → RecordBatch:
+- [x] T1.1.4 `PlatformAnnotation` struct → RecordBatch:
   - columns: probe_id, gene_symbol, entrez_id, description
 
 ### [ ] T1.2 Normalization
