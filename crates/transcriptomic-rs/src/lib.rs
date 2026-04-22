@@ -9,7 +9,7 @@
 //! use transcriptomic_rs::MatrixBuilder;
 //!
 //! let reader = SoftReader::open("GSE65682_family.soft.gz")?;
-//! let matrix = MatrixBuilder::from_soft(reader)?;
+//! let matrix = MatrixBuilder::new().from_soft(reader)?;
 //! let normalized = transcriptomic_rs::Normalize::log2(&matrix);
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
@@ -25,5 +25,8 @@ pub mod matrix;
 pub mod normalization;
 
 pub use error::{Error, Result};
-pub use matrix::{ExpressionMatrix, MatrixBuilder, PlatformAnnotation, SampleMetadata};
+pub use matrix::{
+    AggregationMethod, ExpressionMatrix, MatrixBuilder, MatrixConfig, PlatformAnnotation,
+    SampleMetadata,
+};
 pub use normalization::Normalize;
