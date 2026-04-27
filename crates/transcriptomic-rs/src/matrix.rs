@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 
 use arrow::{
-    array::{Array, Float64Array, StringArray},
+    array::{Array, Float64Array, StringArray, UInt8Array},
     datatypes::{DataType, Field, Schema},
     record_batch::RecordBatch,
 };
@@ -128,18 +128,8 @@ impl MatrixBuilder {
 
     /// Build expression matrix from a SOFT file reader
     ///
-    /// This method processes a SOFT family file (GSE) containing:
-    /// - Multiple GSM (sample) records with data tables
-    /// - A GPL (platform) record with probe-to-gene annotation
-    ///
-    /// # Algorithm
-    ///
-    /// 1. Collect all samples and their data tables
-    /// 2. Extract probe IDs (`ID_REF` column) and expression values from each
-    ///    sample
-    /// 3. Build probe-to-gene mapping from platform annotation (if available)
-    /// 4. For genes with multiple probes, aggregate using the configured method
-    /// 5. Assemble final matrix with genes as rows, samples as columns
+    /// Uses a single-pass over the reader via `next_record()`, collecting both
+    /// GSM samples and the GPL platform in one sweep.
     ///
     /// # Errors
     ///
@@ -152,21 +142,63 @@ impl MatrixBuilder {
     where
         R: std::io::BufRead,
     {
-        // Step 1: Collect all samples and platform
-        let mut samples: Vec<geo_soft_rs::GsmRecord> = Vec::new();
-        let platform_opt: Option<geo_soft_rs::GplRecord> = None;
+        let (samples, platform_opt) = Self::collect_records(&mut reader)?;
+        self.assemble_matrix(&samples, platform_opt.as_ref())
+    }
 
-        // First pass: collect all samples
-        while let Some(result) = reader.next_sample() {
-            let sample = result?;
-            if sample.data_table.is_some() {
-                samples.push(sample);
+    /// Build expression matrix, sample metadata, and platform annotation in a
+    /// single pass over the SOFT reader.
+    ///
+    /// Returns a tuple of `(ExpressionMatrix, SampleMetadata,
+    /// Option<PlatformAnnotation>)`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The SOFT data cannot be parsed
+    /// - No samples with data tables are found
+    /// - Required columns (`ID_REF`, `VALUE`) are missing
+    /// - Arrow data construction fails
+    pub fn build_all<R>(
+        &self,
+        mut reader: geo_soft_rs::SoftReader<R>,
+    ) -> Result<(ExpressionMatrix, SampleMetadata, Option<PlatformAnnotation>)>
+    where
+        R: std::io::BufRead,
+    {
+        let (samples, platform_opt) = Self::collect_records(&mut reader)?;
+        let metadata = SampleMetadata::from_samples(&samples)?;
+        let annotation = platform_opt
+            .as_ref()
+            .map(PlatformAnnotation::from_platform)
+            .transpose()?
+            .flatten();
+        let matrix = self.assemble_matrix(&samples, platform_opt.as_ref())?;
+        Ok((matrix, metadata, annotation))
+    }
+
+    /// Collect all GSM samples (with data tables) and the first GPL platform
+    /// from a reader in a single pass using `next_record()`.
+    fn collect_records<R>(
+        reader: &mut geo_soft_rs::SoftReader<R>,
+    ) -> Result<(Vec<geo_soft_rs::GsmRecord>, Option<geo_soft_rs::GplRecord>)>
+    where
+        R: std::io::BufRead,
+    {
+        let mut samples: Vec<geo_soft_rs::GsmRecord> = Vec::new();
+        let mut platform_opt: Option<geo_soft_rs::GplRecord> = None;
+
+        while let Some(result) = reader.next_record() {
+            match result? {
+                geo_soft_rs::SoftRecord::Sample(s) if s.data_table.is_some() => {
+                    samples.push(s);
+                }
+                geo_soft_rs::SoftRecord::Platform(p) if platform_opt.is_none() => {
+                    platform_opt = Some(p);
+                }
+                _ => {}
             }
         }
-
-        // Reset reader to collect platform
-        // Note: This requires re-opening the file or using a different approach
-        // For now, we work with what we have
 
         if samples.is_empty() {
             return Err(Error::Matrix(
@@ -174,7 +206,17 @@ impl MatrixBuilder {
             ));
         }
 
-        // Step 2: Extract probe expression data from each sample
+        Ok((samples, platform_opt))
+    }
+
+    /// Assemble the `ExpressionMatrix` from already-collected samples and
+    /// optional platform.
+    fn assemble_matrix(
+        &self,
+        samples: &[geo_soft_rs::GsmRecord],
+        platform_opt: Option<&geo_soft_rs::GplRecord>,
+    ) -> Result<ExpressionMatrix> {
+        // Step 1: Extract probe expression data from each sample
         let mut probe_data: HashMap<String, Vec<(usize, f64)>> = HashMap::new();
         let mut sample_ids: Vec<String> = Vec::with_capacity(samples.len());
 
@@ -223,14 +265,14 @@ impl MatrixBuilder {
             }
         }
 
-        // Step 3: Build probe-to-gene mapping if platform is available
-        let probe_to_gene = Self::build_probe_to_gene_map(platform_opt.as_ref());
+        // Step 2: Build probe-to-gene mapping if platform is available
+        let probe_to_gene = Self::build_probe_to_gene_map(platform_opt);
 
-        // Step 4: Aggregate probes by gene
+        // Step 3: Aggregate probes by gene
         let (genes, gene_values) =
             self.aggregate_by_gene(&probe_data, &probe_to_gene, samples.len());
 
-        // Step 5: Build Arrow RecordBatch
+        // Step 4: Build Arrow RecordBatch
         let values = Self::build_record_batch(&genes, &sample_ids, &gene_values)?;
 
         Ok(ExpressionMatrix {
@@ -284,10 +326,18 @@ impl MatrixBuilder {
         probe_to_gene: &HashMap<String, String>,
         num_samples: usize,
     ) -> (Vec<String>, GeneValues) {
-        // Group probes by gene
+        // Group probes by gene, enforcing min_sample_presence
         let mut gene_probes: HashMap<String, Vec<String>> = HashMap::new();
 
-        for probe_id in probe_data.keys() {
+        for (probe_id, sample_entries) in probe_data {
+            let distinct_samples = sample_entries
+                .iter()
+                .map(|(s_idx, _)| s_idx)
+                .collect::<std::collections::HashSet<_>>()
+                .len();
+            if distinct_samples < self.config.min_sample_presence {
+                continue;
+            }
             let gene = probe_to_gene
                 .get(probe_id)
                 .cloned()
@@ -324,7 +374,7 @@ impl MatrixBuilder {
                     let agg = match self.config.aggregation {
                         AggregationMethod::Mean => values.iter().sum::<f64>() / values.len() as f64,
                         AggregationMethod::Median => {
-                            let mut sorted = values.clone();
+                            let mut sorted = values;
                             sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
                             let mid = sorted.len() / 2;
                             if sorted.len() % 2 == 0 {
@@ -337,12 +387,12 @@ impl MatrixBuilder {
                             .iter()
                             .max_by(|a, b| a.partial_cmp(b).unwrap())
                             .copied()
-                            .unwrap_or(0.0),
+                            .expect("non-empty guaranteed by is_empty check above"),
                         AggregationMethod::Min => values
                             .iter()
                             .min_by(|a, b| a.partial_cmp(b).unwrap())
                             .copied()
-                            .unwrap_or(0.0),
+                            .expect("non-empty guaranteed by is_empty check above"),
                     };
                     aggregated.push(Some(agg));
                 }
@@ -373,6 +423,12 @@ impl MatrixBuilder {
         for sample_idx in 0..sample_ids.len() {
             let mut values: Vec<Option<f64>> = Vec::with_capacity(genes.len());
             for gene_values_row in gene_values {
+                debug_assert!(
+                    sample_idx < gene_values_row.len(),
+                    "gene_values row length ({}) must equal num_samples ({})",
+                    gene_values_row.len(),
+                    sample_ids.len()
+                );
                 values.push(gene_values_row[sample_idx]);
             }
             let array = Float64Array::from(values);
@@ -464,6 +520,77 @@ impl SampleMetadata {
 
         Ok(Self { data: batch })
     }
+
+    /// Build sample metadata from a slice of already-collected `GsmRecord`s.
+    ///
+    /// Adds a `channel_index` column (`UInt8`) to distinguish characteristics
+    /// from different channels in multi-channel (e.g. two-colour) samples.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if Arrow data construction fails.
+    pub fn from_samples(samples: &[geo_soft_rs::GsmRecord]) -> Result<Self> {
+        // (gsm_accession, title, channel_index, key, value)
+        let mut records: Vec<(String, String, u8, String, String)> = Vec::new();
+
+        for sample in samples {
+            let gsm_accession = sample
+                .geo_accession
+                .clone()
+                .unwrap_or_else(|| sample.local_id.clone());
+
+            for (channel_idx, char_map) in sample.characteristics.iter().enumerate() {
+                #[allow(clippy::cast_possible_truncation)]
+                let ch = channel_idx as u8;
+                for (key, value) in char_map {
+                    records.push((
+                        gsm_accession.clone(),
+                        sample.title.clone(),
+                        ch,
+                        key.clone(),
+                        value.clone(),
+                    ));
+                }
+            }
+
+            if sample.characteristics.is_empty() {
+                records.push((
+                    gsm_accession,
+                    sample.title.clone(),
+                    0,
+                    String::new(),
+                    String::new(),
+                ));
+            }
+        }
+
+        let schema = Schema::new(vec![
+            Field::new("gsm_accession", DataType::Utf8, false),
+            Field::new("title", DataType::Utf8, false),
+            Field::new("channel_index", DataType::UInt8, false),
+            Field::new("characteristic_key", DataType::Utf8, false),
+            Field::new("characteristic_value", DataType::Utf8, false),
+        ]);
+
+        let gsm_accessions: Vec<&str> = records.iter().map(|r| r.0.as_str()).collect();
+        let titles: Vec<&str> = records.iter().map(|r| r.1.as_str()).collect();
+        let channels: Vec<u8> = records.iter().map(|r| r.2).collect();
+        let keys: Vec<&str> = records.iter().map(|r| r.3.as_str()).collect();
+        let values: Vec<&str> = records.iter().map(|r| r.4.as_str()).collect();
+
+        let batch = RecordBatch::try_new(
+            std::sync::Arc::new(schema),
+            vec![
+                std::sync::Arc::new(StringArray::from(gsm_accessions)),
+                std::sync::Arc::new(StringArray::from(titles)),
+                std::sync::Arc::new(UInt8Array::from(channels)),
+                std::sync::Arc::new(StringArray::from(keys)),
+                std::sync::Arc::new(StringArray::from(values)),
+            ],
+        )?;
+
+        Ok(Self { data: batch })
+    }
 }
 
 /// Platform annotation as Arrow `RecordBatch`
@@ -476,96 +603,102 @@ pub struct PlatformAnnotation {
 }
 
 impl PlatformAnnotation {
-    /// Build platform annotation from SOFT reader
+    /// Build platform annotation directly from a `GplRecord`.
     ///
-    /// Creates a `RecordBatch` with columns:
-    /// - `probe_id`: Probe identifier (`ID_REF`)
-    /// - `gene_symbol`: Gene symbol
-    /// - `entrez_id`: Entrez Gene ID (may be null)
-    /// - `description`: Gene description (may be null)
+    /// Returns `None` if the record has no `annotation_table`.
     ///
     /// # Errors
     ///
-    /// Returns an error if the SOFT data cannot be parsed or if Arrow
-    /// data construction fails.
+    /// Returns an error if the probe ID column is missing or Arrow data
+    /// construction fails.
     #[allow(clippy::similar_names)]
+    pub fn from_platform(platform: &geo_soft_rs::GplRecord) -> Result<Option<Self>> {
+        let Some(ref table) = platform.annotation_table else {
+            return Ok(None);
+        };
+
+        let probe_idx = table
+            .columns
+            .iter()
+            .position(|c| {
+                c.name.eq_ignore_ascii_case("ID")
+                    || c.name.eq_ignore_ascii_case("PROBE_ID")
+                    || c.name.eq_ignore_ascii_case("ID_REF")
+            })
+            .ok_or_else(|| {
+                Error::Matrix("Platform annotation missing probe ID column".to_string())
+            })?;
+
+        let gene_idx = table.columns.iter().position(|c| {
+            c.name.eq_ignore_ascii_case("GENE_SYMBOL")
+                || c.name.eq_ignore_ascii_case("SYMBOL")
+                || c.name.eq_ignore_ascii_case("GENE")
+        });
+
+        let entrez_idx = table.columns.iter().position(|c| {
+            c.name.eq_ignore_ascii_case("ENTREZ_ID")
+                || c.name.eq_ignore_ascii_case("ENTREZ")
+                || c.name.eq_ignore_ascii_case("GENE_ID")
+        });
+
+        let desc_idx = table.columns.iter().position(|c| {
+            c.name.eq_ignore_ascii_case("DESCRIPTION")
+                || c.name.eq_ignore_ascii_case("DESC")
+                || c.name.eq_ignore_ascii_case("GENE_TITLE")
+        });
+
+        let mut probe_ids: Vec<&str> = Vec::new();
+        let mut gene_symbols: Vec<Option<&str>> = Vec::new();
+        let mut gene_entrez_ids: Vec<Option<&str>> = Vec::new();
+        let mut descriptions: Vec<Option<&str>> = Vec::new();
+
+        for row in &table.rows {
+            if let Some(probe) = row.get(probe_idx) {
+                probe_ids.push(probe);
+                gene_symbols.push(gene_idx.and_then(|i| row.get(i).map(String::as_str)));
+                gene_entrez_ids.push(entrez_idx.and_then(|i| row.get(i).map(String::as_str)));
+                descriptions.push(desc_idx.and_then(|i| row.get(i).map(String::as_str)));
+            }
+        }
+
+        let schema = Schema::new(vec![
+            Field::new("probe_id", DataType::Utf8, false),
+            Field::new("gene_symbol", DataType::Utf8, true),
+            Field::new("entrez_id", DataType::Utf8, true),
+            Field::new("description", DataType::Utf8, true),
+        ]);
+
+        let batch = RecordBatch::try_new(
+            std::sync::Arc::new(schema),
+            vec![
+                std::sync::Arc::new(StringArray::from(probe_ids)),
+                std::sync::Arc::new(StringArray::from(gene_symbols)),
+                std::sync::Arc::new(StringArray::from(gene_entrez_ids)),
+                std::sync::Arc::new(StringArray::from(descriptions)),
+            ],
+        )?;
+
+        Ok(Some(Self { data: batch }))
+    }
+
+    /// Build platform annotation from a SOFT reader (first platform found).
+    ///
+    /// Returns `None` if no platform record with an annotation table is found.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SOFT data cannot be parsed or if Arrow data
+    /// construction fails.
     pub fn from_soft<R>(mut reader: geo_soft_rs::SoftReader<R>) -> Result<Option<Self>>
     where
         R: std::io::BufRead,
     {
         while let Some(result) = reader.next_platform() {
             let platform = result?;
-
-            if let Some(ref table) = platform.annotation_table {
-                // Find column indices
-                let probe_idx = table
-                    .columns
-                    .iter()
-                    .position(|c| {
-                        c.name.eq_ignore_ascii_case("ID")
-                            || c.name.eq_ignore_ascii_case("PROBE_ID")
-                            || c.name.eq_ignore_ascii_case("ID_REF")
-                    })
-                    .ok_or_else(|| {
-                        Error::Matrix("Platform annotation missing probe ID column".to_string())
-                    })?;
-
-                let gene_idx = table.columns.iter().position(|c| {
-                    c.name.eq_ignore_ascii_case("GENE_SYMBOL")
-                        || c.name.eq_ignore_ascii_case("SYMBOL")
-                        || c.name.eq_ignore_ascii_case("GENE")
-                });
-
-                let entrez_idx = table.columns.iter().position(|c| {
-                    c.name.eq_ignore_ascii_case("ENTREZ_ID")
-                        || c.name.eq_ignore_ascii_case("ENTREZ")
-                        || c.name.eq_ignore_ascii_case("GENE_ID")
-                });
-
-                let desc_idx = table.columns.iter().position(|c| {
-                    c.name.eq_ignore_ascii_case("DESCRIPTION")
-                        || c.name.eq_ignore_ascii_case("DESC")
-                        || c.name.eq_ignore_ascii_case("GENE_TITLE")
-                });
-
-                // Extract data
-                let mut probe_ids: Vec<&str> = Vec::new();
-                let mut gene_symbols: Vec<Option<&str>> = Vec::new();
-                let mut gene_entrez_ids: Vec<Option<&str>> = Vec::new();
-                let mut descriptions: Vec<Option<&str>> = Vec::new();
-
-                for row in &table.rows {
-                    if let Some(probe) = row.get(probe_idx) {
-                        probe_ids.push(probe);
-                        gene_symbols.push(gene_idx.and_then(|i| row.get(i).map(String::as_str)));
-                        gene_entrez_ids
-                            .push(entrez_idx.and_then(|i| row.get(i).map(String::as_str)));
-                        descriptions.push(desc_idx.and_then(|i| row.get(i).map(String::as_str)));
-                    }
-                }
-
-                // Build RecordBatch
-                let schema = Schema::new(vec![
-                    Field::new("probe_id", DataType::Utf8, false),
-                    Field::new("gene_symbol", DataType::Utf8, true),
-                    Field::new("entrez_id", DataType::Utf8, true),
-                    Field::new("description", DataType::Utf8, true),
-                ]);
-
-                let batch = RecordBatch::try_new(
-                    std::sync::Arc::new(schema),
-                    vec![
-                        std::sync::Arc::new(StringArray::from(probe_ids)),
-                        std::sync::Arc::new(StringArray::from(gene_symbols)),
-                        std::sync::Arc::new(StringArray::from(gene_entrez_ids)),
-                        std::sync::Arc::new(StringArray::from(descriptions)),
-                    ],
-                )?;
-
-                return Ok(Some(Self { data: batch }));
+            if let Some(annotation) = Self::from_platform(&platform)? {
+                return Ok(Some(annotation));
             }
         }
-
         Ok(None)
     }
 }

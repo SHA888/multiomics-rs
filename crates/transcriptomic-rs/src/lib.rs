@@ -26,7 +26,7 @@ pub mod normalization;
 
 pub use error::{Error, Result};
 pub use matrix::{
-    AggregationMethod, ExpressionMatrix, MatrixBuilder, MatrixConfig, PlatformAnnotation,
-    SampleMetadata,
+    AggregationMethod, ExpressionMatrix, GeneValues, MatrixBuilder, MatrixConfig,
+    PlatformAnnotation, SampleMetadata,
 };
 pub use normalization::Normalize;
