@@ -472,12 +472,12 @@ pub struct SoftFile {
 - [x] T1.1.4 `PlatformAnnotation` struct → RecordBatch:
   - columns: probe_id, gene_symbol, entrez_id, description
 
-### [ ] T1.2 Normalization
+### [x] T1.2 Normalization
 
-- [ ] T1.2.1 `Normalize::log2(matrix) -> ExpressionMatrix` (log2(x+1))
-- [ ] T1.2.2 `Normalize::quantile(matrix) -> ExpressionMatrix`
-- [ ] T1.2.3 `Normalize::z_score_per_gene(matrix) -> ExpressionMatrix`
-- [ ] T1.2.4 Normalization is explicit and composable — no hidden defaults
+- [x] T1.2.1 `Normalize::log2(matrix) -> ExpressionMatrix` (log2(x+1))
+- [x] T1.2.2 `Normalize::quantile(matrix) -> ExpressionMatrix`
+- [x] T1.2.3 `Normalize::z_score_per_gene(matrix) -> ExpressionMatrix`
+- [x] T1.2.4 Normalization is explicit and composable — no hidden defaults
 
 ### [ ] T1.3 Tests + docs + release
 
