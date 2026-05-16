@@ -67,7 +67,7 @@ crate other than via declared dependency (e.g., transcriptomic-rs on
 geo-soft-rs). Consumers declare the crates they use in their own `Cargo.toml`
 at whatever version is current.
 
-### Ecosystem split  *(added v0.3)*
+### Ecosystem split _(added v0.3)_
 
 `multiomics-rs` is one of three sibling workspaces for biomedical reference
 database parsing. The split follows license and subject-matter boundaries:
@@ -97,6 +97,7 @@ they need.
 ---
 
 ## SPRINT 0 — Workspace bootstrap
+
 > Same pattern as clinical-rs. Gate: CI green on empty workspace.
 
 ### [x] S0.1 Repository
@@ -191,10 +192,12 @@ For each crate: `Cargo.toml` + `src/lib.rs` stub + `README.md` + `CHANGELOG.md`
 ---
 
 ## geo-soft-rs — v0.1.0
+
 > Parser for NCBI GEO SOFT format → Arrow.
 > Gap confirmed: no Rust SOFT parser exists on crates.io (April 2026).
 
 SOFT structure (four entity types, all may appear in a single family file):
+
 ```
 ^PLATFORM = GPL96            → entity start (local ID, not accession)
 !Platform_geo_accession = GPL96
@@ -229,6 +232,7 @@ ID_REF\tIDENTIFIER\tGSM1234\tGSM1235\t...
 ```
 
 ### [x] G1.0 GDS entity support
+
 > GEO hosts 4,348 curated DataSets in SOFT format — omitting this blocks that corpus
 
 - [x] G1.0.1 `GdsRecord` struct:
@@ -261,6 +265,7 @@ ID_REF\tIDENTIFIER\tGSM1234\tGSM1235\t...
 
 State machine — all transitions symmetric; any `^` line while inside an entity emits the
 current record and starts the new entity state:
+
 ```
 Idle → InPlatform     on ^PLATFORM
 Idle → InSample       on ^SAMPLE
@@ -332,15 +337,15 @@ In any entity state:
 - [x] G1.1.6 Multi-value field handling (`!key = val` appearing multiple times → `Vec<String>`)
 - [x] G1.1.7 gzip streaming without full decompression into memory
 - [x] G1.1.8 Distinguish `^local_id` from `!*_geo_accession` for all entity types —
-            these are different values and must not be conflated
+      these are different values and must not be conflated
 - [x] G1.1.9 `channel_count` detection: prefer `!Sample_channel_count`; fall back to
-            counting distinct `_ch[n]` suffixes seen in attributes
+      counting distinct `_ch[n]` suffixes seen in attributes
 - [x] G1.1.10 Line ending normalization: strip `\r` before field parsing (`\r\n` and bare `\r`)
 - [x] G1.1.11 UTF-8 BOM (`\xEF\xBB\xBF`) stripping on first line of file
 - [x] G1.1.12 Blank line tolerance: skip silently in all states
 - [x] G1.1.13 Download-only attribute tolerance: `_status`, `_submission_date`,
-             `_last_update_date`, `_row_count`, `_contact_*` → route to `metadata` HashMap,
-             never return a parse error
+      `_last_update_date`, `_row_count`, `_contact_*` → route to `metadata` HashMap,
+      never return a parse error
 
 ### [x] G1.2 Arrow output
 
@@ -368,7 +373,7 @@ In any entity state:
   - `"geo_accession"` → accession string where known
   - `"geo_platform_id"` → platform accession (GSM batches)
 - [x] G1.2.6 `#` hash line content propagated into `ColumnDescriptor.description` and
-            surfaced as Arrow field metadata (`"geo_col_desc"` key)
+      surfaced as Arrow field metadata (`"geo_col_desc"` key)
 - [x] G1.2.7 `GdsRecord::to_record_batch() -> Result<RecordBatch>` (see G1.0.5)
 
 ### [x] G1.3 `SoftReader` API
@@ -380,10 +385,10 @@ In any entity state:
 - [x] G1.3.5 `SoftReader::platforms() -> impl Iterator<Item = Result<GplRecord>> + '_`
 - [x] G1.3.6 `SoftReader::datasets() -> impl Iterator<Item = Result<GdsRecord>> + '_`
 - [x] G1.3.7 `SoftReader::records() -> impl Iterator<Item = Result<SoftRecord>> + '_`
-            — heterogeneous; preserves file order; required for family files where entity
-            order is unknown
+      — heterogeneous; preserves file order; required for family files where entity
+      order is unknown
 - [x] G1.3.8 `SoftReader::read_all() -> Result<SoftFile>`
-            — eager; convenience for small files
+      — eager; convenience for small files
 
 ```rust
 pub enum SoftRecord {
@@ -423,22 +428,22 @@ pub struct SoftFile {
   - Row count matches fixture data
   - Schema metadata keys present: `geo_accession`, `geo_channel_count`, `geo_platform_id`
 - [x] G1.4.4 Integration test: parse `minimal_family.soft` end-to-end,
-  assert series accession, sample count, platform annotation row count
+      assert series accession, sample count, platform annotation row count
 - [x] G1.4.5 Property tests: parser handles empty tables, missing fields,
-  arbitrary whitespace without panic
+      arbitrary whitespace without panic
 - [x] G1.4.6 Dual-channel fixture: `channel_count = 2`, VALUE column = log ratio,
-            `ch1_value` and `ch2_value` columns present in RecordBatch schema
+      `ch1_value` and `ch2_value` columns present in RecordBatch schema
 - [x] G1.4.7 GDS fixture: `GdsRecord` parsed, `GdsSubset` list populated,
-            data table column count = 2 + sample_count
+      data table column count = 2 + sample_count
 - [x] G1.4.8 Download-attrs fixture: `_contact_name`, `_status`, `_submission_date`
-            route to `metadata` HashMap — no parse error, not in named struct fields
+      route to `metadata` HashMap — no parse error, not in named struct fields
 - [x] G1.4.9 Null sentinel coverage: each of `""`, `"NA"`, `"null"`, `"NaN"`, `"none"`
-            in VALUE column → Arrow null; verify with `is_null()` on resulting array
+      in VALUE column → Arrow null; verify with `is_null()` on resulting array
 - [x] G1.4.10 Malformed float: `"abc"` in VALUE column → `Err`, not `None`
 - [x] G1.4.11 Line endings: `\r\n`-terminated fixture produces identical RecordBatch to `\n` version
 - [x] G1.4.12 `local_id` vs `geo_accession`: fixture where `^SAMPLE = my_local_name` and
-             `!Sample_geo_accession = GSM99999` → `local_id = "my_local_name"`,
-             `geo_accession = Some("GSM99999")`
+      `!Sample_geo_accession = GSM99999` → `local_id = "my_local_name"`,
+      `geo_accession = Some("GSM99999")`
 - [x] G1.4.13 Official GDS6063 test with real-world data (7 subsets, 10 samples)
 
 ### [x] G1.5 Documentation + release
@@ -448,11 +453,12 @@ pub struct SoftFile {
 - [x] G1.5.3 `CHANGELOG.md` entry
 - [x] G1.5.4 `cargo doc --no-deps` builds without warnings
 - [x] G1.5.5 Version `0.0.0` → `0.1.0`
-- [ ] G1.5.6 Publish to crates.io and verify page renders
+- [x] G1.5.6 Publish to crates.io and verify page renders
 
 ---
 
 ## transcriptomic-rs — v0.1.0
+
 > Depends on: geo-soft-rs. Ships in Wave 1 immediately after geo-soft-rs indexes.
 
 ### [x] T1.1 Expression matrix assembly
@@ -479,16 +485,17 @@ pub struct SoftFile {
 - [x] T1.2.3 `Normalize::z_score_per_gene(matrix) -> ExpressionMatrix`
 - [x] T1.2.4 Normalization is explicit and composable — no hidden defaults
 
-### [ ] T1.3 Tests + docs + release
+### [x] T1.3 Tests + docs + release
 
-- [ ] T1.3.1 Unit tests: matrix assembly from synthetic geo-soft-rs fixtures
-- [ ] T1.3.2 Normalization: known-answer tests (specific input → specific output)
-- [ ] T1.3.3 Missing value propagation: null in input → null in output
+- [x] T1.3.1 Unit tests: matrix assembly from synthetic geo-soft-rs fixtures
+- [x] T1.3.2 Normalization: known-answer tests (specific input → specific output)
+- [x] T1.3.3 Missing value propagation: null in input → null in output
 - [ ] T1.3.4 Publish `0.1.0`
 
 ---
 
 ## uniprot-rs — v0.1.0
+
 > Wave 2 — single TSV format, no intra-workspace dependencies.
 
 - [ ] U1.1 TSV reader for UniProt Swiss-Prot reviewed human entries
@@ -504,6 +511,7 @@ pub struct SoftFile {
 ---
 
 ## reactome-rs — v0.1.0
+
 > Wave 2 — single TSV format, no intra-workspace dependencies.
 
 - [ ] R1.1 TSV reader for `Ensembl2Reactome_All_Levels.txt`
@@ -519,6 +527,7 @@ pub struct SoftFile {
 ---
 
 ## open-targets-rs — v0.1.0
+
 > Wave 3 — largest dataset in the workspace (~20GB Parquet, partitioned).
 
 - [ ] O1.1 Parquet reader for Open Targets `evidence/` partition
@@ -534,6 +543,7 @@ pub struct SoftFile {
 ---
 
 ## gtex-rs — v0.1.0
+
 > Wave 3 — GCT format plus tidy-format pivot.
 
 - [ ] X1.1 GCT format reader (tab-delimited, 2-row header, gzip)
@@ -548,6 +558,7 @@ pub struct SoftFile {
 ---
 
 ## string-rs — v0.1.0
+
 > Wave 3 — two TSV files, v12 directionality parsing.
 
 - [ ] SR1.1 TSV reader for `9606.protein.links.full.v12.0.txt.gz`
@@ -564,6 +575,7 @@ pub struct SoftFile {
 ---
 
 ## dgidb-rs — v0.1.0
+
 > Wave 3 — evaluate DGIdb MCP server before building; may be deferred or canceled.
 
 - [ ] D1.1 Assess DGIdb MCP server (`github.com/dgidb/dgidb-mcp-server`)
@@ -578,7 +590,8 @@ pub struct SoftFile {
 
 ---
 
-## hgnc-rs — v0.1.0  *(added v0.3)*
+## hgnc-rs — v0.1.0 _(added v0.3)_
+
 > Wave 1 — gene symbol authority. No intra-workspace dependencies.
 > Downstream value: canonical gene-symbol table for ID normalization
 > across all other crates.
@@ -597,7 +610,8 @@ pub struct SoftFile {
 
 ---
 
-## refseq-rs — v0.1.0  *(added v0.3)*
+## refseq-rs — v0.1.0 _(added v0.3)_
+
 > Wave 2 — transcript and protein reference summaries. TSV-only;
 > sequence data is out of scope (see oxbow/noodles).
 
@@ -612,7 +626,8 @@ pub struct SoftFile {
 
 ---
 
-## pfam-rs — v0.1.0  *(added v0.3)*
+## pfam-rs — v0.1.0 _(added v0.3)_
+
 > Wave 2 — protein families and domain hits via InterPro distribution.
 
 - [ ] PF1.1 TSV reader for `pfamA.txt.gz` (family definitions)
@@ -621,12 +636,13 @@ pub struct SoftFile {
 - [ ] PF1.2 TSV reader for `pfamA_reg_full_significant.txt.gz` (domain hits)
   - `DomainHit` → RecordBatch (uniprot_id, pfam_id, start, end, e_value)
 - [ ] PF1.3 Note: Pfam now distributed via InterPro — track upstream
-  availability and download URLs
+      availability and download URLs
 - [ ] PF1.4 Tests + publish `0.1.0`
 
 ---
 
-## intact-rs — v0.1.0  *(added v0.3)*
+## intact-rs — v0.1.0 _(added v0.3)_
+
 > Wave 2 — PSI-MITAB 2.7 parser. One parser covers IntAct, MINT,
 > and other PSI-MI consortium members sharing the format.
 
@@ -635,16 +651,17 @@ pub struct SoftFile {
     publication, confidence, source_db)
   - 42 standard PSI-MITAB 2.7 columns; subset mapped by default
 - [ ] IA1.2 Controlled-vocabulary term resolution (PSI-MI ontology IDs
-  like `MI:0492` for "in vitro") — keep IDs + display names
+      like `MI:0492` for "in vitro") — keep IDs + display names
 - [ ] IA1.3 Multi-source support: IntAct is the primary test, but
-  MINT / DIP / BioGRID (in PSI-MITAB) should parse with the same code path
+      MINT / DIP / BioGRID (in PSI-MITAB) should parse with the same code path
 - [ ] IA1.4 Tests against synthetic PSI-MITAB fixtures + one real
-  IntAct release subset
+      IntAct release subset
 - [ ] IA1.5 Publish `0.1.0`
 
 ---
 
-## corum-rs — v0.1.0  *(added v0.3)*
+## corum-rs — v0.1.0 _(added v0.3)_
+
 > Wave 2 — CORUM protein complexes. Small dataset, simple schema.
 
 - [ ] CR1.1 TSV reader for CORUM download
@@ -657,7 +674,8 @@ pub struct SoftFile {
 
 ---
 
-## signor-rs — v0.1.0  *(added v0.3)*
+## signor-rs — v0.1.0 _(added v0.3)_
+
 > Wave 2 — signed signaling networks with residue-level detail where known.
 
 - [ ] SG1.1 TSV reader for SIGNOR download
@@ -671,7 +689,8 @@ pub struct SoftFile {
 
 ---
 
-## hmdb-rs — v0.1.0  *(added v0.3)*
+## hmdb-rs — v0.1.0 _(added v0.3)_
+
 > Wave 3 — large metabolomics dataset (~220K metabolites).
 > XML parsing required for completeness; TSV subset is incomplete.
 
@@ -682,15 +701,16 @@ pub struct SoftFile {
     pathways (List&lt;Utf8&gt;))
 - [ ] HM1.2 Streaming design — do not materialize full XML tree in memory
 - [ ] HM1.3 Namespace handling — HMDB XML includes nested entities
-  (secondary_accessions, biological_properties, concentrations)
+      (secondary_accessions, biological_properties, concentrations)
 - [ ] HM1.4 HMDB custom license flag in Arrow metadata; README notes
-  non-commercial terms
+      non-commercial terms
 - [ ] HM1.5 Tests against a small curated HMDB subset (10 metabolites)
 - [ ] HM1.6 Publish `0.1.0`
 
 ---
 
-## gwas-catalog-rs — v0.1.0  *(added v0.3)*
+## gwas-catalog-rs — v0.1.0 _(added v0.3)_
+
 > Wave 3 — weekly-updated TSV, ~600K associations.
 
 - [ ] GW1.1 TSV reader for `gwas_catalog_v1.0.tsv`
@@ -704,7 +724,8 @@ pub struct SoftFile {
 
 ---
 
-## hpa-rs — v0.1.0  *(added v0.3)*
+## hpa-rs — v0.1.0 _(added v0.3)_
+
 > Wave 3 — Human Protein Atlas, four separate TSV download files.
 
 - [ ] HP1.1 TSV reader for `proteinatlas.tsv` (tissue IHC)
@@ -714,12 +735,13 @@ pub struct SoftFile {
 - [ ] HP1.3 TSV reader for `subcellular_location.tsv`
   - `SubcellularLocation` → RecordBatch (gene, location, reliability)
 - [ ] HP1.4 CC BY-SA 4.0 license flag in Arrow schema metadata
-  (share-alike — consumers must comply downstream)
+      (share-alike — consumers must comply downstream)
 - [ ] HP1.5 Tests + publish `0.1.0`
 
 ---
 
-## sider-rs — v0.1.0  *(added v0.3)*
+## sider-rs — v0.1.0 _(added v0.3)_
+
 > Wave 3 — drug side effects from SIDER 4.1.
 
 - [ ] SI1.1 TSV reader for `meddra_all_se.tsv`
@@ -729,12 +751,13 @@ pub struct SoftFile {
   - `DrugIndication` → RecordBatch
 - [ ] SI1.3 Drug identifier join (drug_names.tsv, drug_atc.tsv)
 - [ ] SI1.4 CC BY-NC-SA 4.0 license flag in Arrow metadata
-  (non-commercial share-alike — warn in README)
+      (non-commercial share-alike — warn in README)
 - [ ] SI1.5 Tests + publish `0.1.0`
 
 ---
 
-## stitch-rs — v0.1.0  *(added v0.3)*
+## stitch-rs — v0.1.0 _(added v0.3)_
+
 > Wave 3 — chemical-protein interactions; format mirrors STRING.
 
 - [ ] ST1.1 TSV reader for `9606.protein_chemical.links.v5.0.tsv.gz`
@@ -743,13 +766,14 @@ pub struct SoftFile {
   - chemical IDs are CID-m (merged PubChem CIDs)
 - [ ] ST1.2 TSV reader for `9606.actions.v5.0.tsv.gz` (directed actions)
 - [ ] ST1.3 Evaluate sharing parser code with string-rs at implementation
-  time (near-identical TSV structure)
+      time (near-identical TSV structure)
 - [ ] ST1.4 Default filter: `combined_score >= 700` (configurable)
 - [ ] ST1.5 Tests + publish `0.1.0`
 
 ---
 
-## cgi-rs — v0.1.0  *(added v0.3)*
+## cgi-rs — v0.1.0 _(added v0.3)_
+
 > Wave 3 — Cancer Genome Interpreter; non-commercial share-alike.
 
 - [ ] CG1.1 TSV reader for CGI download
@@ -757,24 +781,24 @@ pub struct SoftFile {
   - columns: gene, variant, disease, drug, evidence_level,
     source_publication
 - [ ] CG1.2 CC BY-NC-SA 4.0 license flag in Arrow schema metadata
-  (non-commercial share-alike — warn in README)
+      (non-commercial share-alike — warn in README)
 - [ ] CG1.3 Tests + publish `0.1.0`
 
 ---
 
 ## FUTURE — Post v1.0
 
-| Crate | Source | Purpose |
-|---|---|---|
-| `encode-rs` | ENCODE Project | chromatin accessibility, histone marks → Arrow |
-| `tcga-rs` | TCGA via GDC | tumor multi-omics → Arrow |
-| `depmap-rs` | DepMap | cancer dependency → Arrow |
-| `clinvar-rs` | ClinVar | variant-disease → Arrow |
-| `bbj-rs` | BioBank Japan | GWAS summary stats → Arrow |
+| Crate        | Source         | Purpose                                        |
+| ------------ | -------------- | ---------------------------------------------- |
+| `encode-rs`  | ENCODE Project | chromatin accessibility, histone marks → Arrow |
+| `tcga-rs`    | TCGA via GDC   | tumor multi-omics → Arrow                      |
+| `depmap-rs`  | DepMap         | cancer dependency → Arrow                      |
+| `clinvar-rs` | ClinVar        | variant-disease → Arrow                        |
+| `bbj-rs`     | BioBank Japan  | GWAS summary stats → Arrow                     |
 
-*(Note: `gwas-catalog-rs` moved from FUTURE to Wave 3 active roadmap in v0.3.)*
+_(Note: `gwas-catalog-rs` moved from FUTURE to Wave 3 active roadmap in v0.3.)_
 
-### Overlap candidates — add if a specific consumer need emerges  *(v0.3)*
+### Overlap candidates — add if a specific consumer need emerges _(v0.3)_
 
 These three crates were considered for the v0.3 scope expansion but deferred
 because their coverage substantially overlaps crates already in the roadmap.
@@ -782,13 +806,13 @@ Adding them now would create redundant maintenance burden without clear
 differentiating value. Each can move into active roadmap if a concrete
 consumer need arises.
 
-| Crate | Source | Overlaps | Rationale for deferral |
-|---|---|---|---|
-| `pathwaycommons-rs` | PathwayCommons | reactome-rs | PathwayCommons aggregates Reactome + BioCyc + NCI-Nature + KEGG; for consumers needing only Reactome, the direct crate is simpler. Add if a consumer needs the broader pathway aggregation. |
-| `smpdb-rs` | SMPDB | reactome-rs | Small Molecule Pathway Database; focused on small-molecule pathways specifically. Reactome covers most of the ground. Add if metabolite-centric pathway data becomes distinct from HMDB + Reactome combined. |
-| `mutationds-rs` | MutationDs | intact-rs | Mutations and their effects on molecular interactions. IntAct already covers mutation-in-interaction evidence via the PSI-MITAB `feature_a` / `feature_b` fields. Add if a consumer specifically needs MutationDs's curation over IntAct's native coverage. |
+| Crate               | Source         | Overlaps    | Rationale for deferral                                                                                                                                                                                                                                      |
+| ------------------- | -------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pathwaycommons-rs` | PathwayCommons | reactome-rs | PathwayCommons aggregates Reactome + BioCyc + NCI-Nature + KEGG; for consumers needing only Reactome, the direct crate is simpler. Add if a consumer needs the broader pathway aggregation.                                                                 |
+| `smpdb-rs`          | SMPDB          | reactome-rs | Small Molecule Pathway Database; focused on small-molecule pathways specifically. Reactome covers most of the ground. Add if metabolite-centric pathway data becomes distinct from HMDB + Reactome combined.                                                |
+| `mutationds-rs`     | MutationDs     | intact-rs   | Mutations and their effects on molecular interactions. IntAct already covers mutation-in-interaction evidence via the PSI-MITAB `feature_a` / `feature_b` fields. Add if a consumer specifically needs MutationDs's curation over IntAct's native coverage. |
 
 ---
 
-*Last updated: 2026-04-20. v0.2 §1.5 boundary remediation applied (see header comment). v0.3 scope expansion applied: +12 crate entries across Waves 1–3, three-workspace split recorded. geo-soft-rs design review complete — GDS entity, dual-channel, null sentinels, download attributes, local_id/accession distinction landed.*
-*Immediate next action: G1.5.6 (publish geo-soft-rs to crates.io), then HG1.1 (hgnc-rs — identifier authority enables cross-crate joins) or T1.1 (transcriptomic-rs — clears Wave 1).*
+_Last updated: 2026-04-20. v0.2 §1.5 boundary remediation applied (see header comment). v0.3 scope expansion applied: +12 crate entries across Waves 1–3, three-workspace split recorded. geo-soft-rs design review complete — GDS entity, dual-channel, null sentinels, download attributes, local_id/accession distinction landed._
+_Immediate next action: G1.5.6 (publish geo-soft-rs to crates.io), then HG1.1 (hgnc-rs — identifier authority enables cross-crate joins) or T1.1 (transcriptomic-rs — clears Wave 1)._
