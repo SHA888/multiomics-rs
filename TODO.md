@@ -490,7 +490,7 @@ pub struct SoftFile {
 - [x] T1.3.1 Unit tests: matrix assembly from synthetic geo-soft-rs fixtures
 - [x] T1.3.2 Normalization: known-answer tests (specific input → specific output)
 - [x] T1.3.3 Missing value propagation: null in input → null in output
-- [ ] T1.3.4 Publish `0.1.0`
+- [x] T1.3.4 Publish `0.1.0`
 
 ---
 
